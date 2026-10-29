@@ -559,6 +559,9 @@
                 retentionDays[k] = val;
                 retentionDays[k.replace(/\.txt$/i, '')] = val;
               });
+            } catch (_) {}
+          }
+
           if (files['db.json'] && files['db.json'].content) {
             try {
               state.db = JSON.parse(files['db.json'].content);
@@ -650,13 +653,17 @@
         }
       }
 
-      document.getElementById('btnSaveCreds').onclick = () => {
+      document.getElementById('btnSaveCreds').onclick = async () => {
         creds.token = elToken.value.trim();
         creds.gistId = normalizeGistId(elGistId.value);
         elGistId.value = creds.gistId;
         persistLocal();
         renderAll();
-        setStatus('Настройки сохранены в localStorage', false);
+        if (!creds.token || !creds.gistId) {
+          setStatus('Укажите GitHub Token и Gist ID', true);
+          return;
+        }
+        await loadFromGist();
       };
 
       document.getElementById('btnLoadGist').onclick = loadFromGist;
@@ -845,6 +852,9 @@
       };
 
       renderAll();
+      if (creds.token && creds.gistId) {
+        loadFromGist();
+      }
     })();
   </script>
 </body>

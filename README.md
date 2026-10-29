@@ -10,7 +10,7 @@
 ### 1. Настройка секретов репозитория
 Перейдите в **Settings → Secrets and variables → Actions** и добавьте два секрета:
 - `GIST_TOKEN` — ваш GitHub Personal Access Token с правами `gist`.
-- `GIST_ID` — ``.
+- `GIST_ID` — `b9afa5ebb9d442f8a031e183f90cbaa2`.
 
 ### 2. Включение GitHub Pages
 Перейдите в **Settings → Pages**:
