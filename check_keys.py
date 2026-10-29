@@ -48,6 +48,13 @@ class VlessEndpoint:
 
 
 def parse_vless_url(line: str) -> VlessEndpoint | None:
+    """
+    Парсит vless:// строку, извлекая хост, порт и имя (из #fragment или SNI).
+    Поддерживает:
+      - vless://uuid@1.2.3.4:443?security=reality#Name
+      - vless://uuid@example.com:8443?sni=example.com#Name
+      - vless://uuid@[2a01:4f9:c010:82a1::1]:443?security=reality#IPv6
+    """
     cleaned = line.strip().strip("'\"`<>")
     if not cleaned.lower().startswith("vless://"):
         return None
@@ -127,6 +134,9 @@ def parse_vless_url(line: str) -> VlessEndpoint | None:
 
 
 def tcp_ping(host: str, port: int, timeout: float = TCP_TIMEOUT_SECONDS) -> tuple[bool, float | None]:
+    """
+    Быстрый TCP/Handshake пинг с поддержкой IPv4, DNS и IPv6.
+    """
     clean_host = host.strip("[]")
     if not clean_host:
         return False, None
