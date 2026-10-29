@@ -1,17 +1,21 @@
-name: Check VLESS Keys in Gist
+name: Check VLESS Keys
 
 on:
   schedule:
-    # Запуск каждые 6 часов (в 00:00, 06:00, 12:00 и 18:00 UTC)
-    - cron: '0 */6 * * *'
+    # Запуск каждые 6 часов (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: "0 */6 * * *"
   workflow_dispatch:
+
+concurrency:
+  group: vless-gist-checker
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  check-and-prune-keys:
-    name: TCP Ping & Prune Inactive VLESS Keys
+  check-and-prune:
+    name: TCP Ping & Prune Gist Subscriptions
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -19,18 +23,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: "3.12"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Run VLESS Gist Checker
+      - name: Run VLESS key checker
         env:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
