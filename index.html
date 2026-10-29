@@ -1,1 +1,498 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0B0F17" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="VLESS Hub" />
+  <title>VLESS Gist Manager — Happ & Invy</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background-color: #0B0F17;
+      color: #F1F5F9;
+      -webkit-tap-highlight-color: transparent;
+    }
+    h1, h2, h3, .font-display { font-family: 'Outfit', sans-serif; }
+    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body class="min-h-screen bg-[#0B0F17] text-slate-100 pb-20">
+  <header class="sticky top-0 z-30 bg-[#0B0F17]/90 backdrop-blur-md border-b border-slate-800/80 px-4 py-3.5">
+    <div class="max-w-3xl mx-auto flex items-center justify-between gap-4">
+      <span class="font-display text-lg font-bold tracking-tight text-white whitespace-nowrap">VLESS Gist Hub</span>
+      <button id="btnPullGist" type="button" class="min-h-[40px] px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-100 border border-slate-700 transition-colors whitespace-nowrap">
+        Загрузить из Gist
+      </button>
+    </div>
+  </header>
 
+  <main class="max-w-3xl mx-auto px-4 pt-5 space-y-6">
+    <!-- Статус уведомлений -->
+    <div id="statusBanner" class="hidden rounded-xl border px-4 py-3 text-sm"></div>
+
+    <!-- 1. Настройки GitHub Gist -->
+    <section class="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 sm:p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="font-display text-base font-semibold text-white">1. Подключение к GitHub Gist</h2>
+        <span id="ownerLabel" class="text-xs font-mono text-slate-400"></span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1.5" for="ghToken">GitHub Token (scope: gist)</label>
+          <input id="ghToken" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off"
+            class="w-full min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono text-slate-100 focus:outline-none focus:border-sky-500" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1.5" for="gistId">Gist ID</label>
+          <input id="gistId" type="text" placeholder="a1b2c3d4e5f67890..." autocomplete="off"
+            class="w-full min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono text-slate-100 focus:outline-none focus:border-sky-500" />
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <p class="text-xs text-slate-400">Данные сохраняются локально на устройстве в <code class="text-slate-300">localStorage</code>.</p>
+        <button id="btnSaveCreds" type="button" class="min-h-[44px] px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition-colors whitespace-nowrap">
+          Сохранить и проверить Gist
+        </button>
+      </div>
+    </section>
+
+    <!-- 2. Иерархия папок и пороги дней -->
+    <section class="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 sm:p-5 space-y-4">
+      <div>
+        <h2 class="font-display text-base font-semibold text-white">2. Папки подписок и автоочистка</h2>
+        <p class="text-xs text-slate-400 mt-0.5">Выберите активную папку для добавления ключей и задайте порог удаления неактивных серверов.</p>
+      </div>
+
+      <!-- Табы папок -->
+      <div id="folderTabs" class="flex flex-wrap items-center gap-2"></div>
+
+      <!-- Создание новой папки -->
+      <div class="flex flex-col sm:flex-row gap-2.5 pt-2 border-t border-slate-800/80">
+        <input id="newFolderName" type="text" placeholder="Новая папка (например: Канада или fast)"
+          class="flex-1 min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 focus:outline-none focus:border-sky-500" />
+        <input id="newFolderDays" type="number" min="1" max="365" value="3"
+          class="w-full sm:w-28 min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono text-slate-100 focus:outline-none focus:border-sky-500"
+          title="Лимит дней молчания" />
+        <button id="btnCreateFolder" type="button" class="min-h-[44px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-xs font-medium transition-colors whitespace-nowrap">
+          Создать папку
+        </button>
+      </div>
+
+      <!-- Настройка активной папки + Генератор RAW ссылки -->
+      <div class="rounded-xl bg-slate-950/90 border border-slate-800/90 p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold text-white">
+              Файл в Gist: <code id="activeFileLabel" class="text-sky-400 font-mono">all.txt</code>
+            </div>
+            <div id="activeFolderStats" class="text-xs text-slate-400 mt-0.5">Ключей в папке: 0</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <label for="activeMaxDays" class="text-xs text-slate-300">Удалять неактивные через (дней):</label>
+            <input id="activeMaxDays" type="number" min="1" max="365" value="3"
+              class="w-20 min-h-[40px] px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm font-mono text-center text-white focus:outline-none focus:border-sky-500" />
+          </div>
+        </div>
+
+        <div class="space-y-1.5 pt-2 border-t border-slate-800/80">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-slate-400">Постоянная RAW-ссылка для Happ / Invy:</span>
+            <button id="btnCopyRawUrl" type="button" class="text-xs font-medium text-sky-400 hover:text-sky-300 transition-colors">
+              Скопировать ссылку
+            </button>
+          </div>
+          <input id="rawUrlDisplay" type="text" readonly
+            class="w-full min-h-[40px] px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-xs font-mono text-slate-300 select-all focus:outline-none" />
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Парсер сырого текста из Telegram -->
+    <section class="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 sm:p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="font-display text-base font-semibold text-white">3. Импорт и парсинг VLESS-ключей</h2>
+        <button id="btnClearInput" type="button" class="text-xs text-slate-400 hover:text-slate-200">Очистить поле</button>
+      </div>
+      <textarea id="rawTelegramInput" rows="5"
+        placeholder="Вставьте сюда сообщение из Telegram-канала с текстом, эмодзи, датами и ссылками vless://..."
+        class="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-sky-500"></textarea>
+
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div id="parsePreviewInfo" class="text-xs text-slate-400">Вставьте текст для автоматического распознавания ссылок.</div>
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button id="btnAddParsedToFolder" type="button" class="min-h-[44px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-xs font-medium transition-colors whitespace-nowrap">
+            Добавить в текущую папку
+          </button>
+          <button id="btnSyncGist" type="button" class="min-h-[44px] px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition-colors whitespace-nowrap">
+            Синхронизировать с Gist (PATCH)
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Список ключей в выбранной папке -->
+    <section class="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 sm:p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="font-display text-base font-semibold text-white">4. Ключи в выбранной папке</h2>
+        <button id="btnCopyAllKeys" type="button" class="text-xs text-sky-400 hover:text-sky-300 font-medium">Скопировать все vless://</button>
+      </div>
+      <div id="keysListContainer" class="divide-y divide-slate-800/80"></div>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEYS = {
+      TOKEN: 'vless_hub_gh_token',
+      GIST_ID: 'vless_hub_gist_id',
+      OWNER: 'vless_hub_gist_owner',
+      STATE: 'vless_hub_folders_state'
+    };
+
+    const defaultState = {
+      activeFolder: 'all',
+      folders: {
+        all: { max_silent_days: 3, keys: [] },
+        favourites: { max_silent_days: 7, keys: [] }
+      }
+    };
+
+    let appState = loadLocalState();
+
+    function loadLocalState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEYS.STATE);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.folders && parsed.folders.all && parsed.folders.favourites) {
+            return parsed;
+          }
+        }
+      } catch (e) {}
+      return JSON.parse(JSON.stringify(defaultState));
+    }
+
+    function saveLocalState() {
+      localStorage.setItem(STORAGE_KEYS.STATE, JSON.stringify(appState));
+    }
+
+    function showStatus(msg, isError = false) {
+      const el = document.getElementById('statusBanner');
+      el.textContent = msg;
+      el.className = isError
+        ? 'rounded-xl border border-rose-500/40 bg-rose-950/60 px-4 py-3 text-xs text-rose-200'
+        : 'rounded-xl border border-emerald-500/40 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-200';
+      el.classList.remove('hidden');
+    }
+
+    function parseVlessUri(uri) {
+      const cleaned = uri.trim();
+      if (!cleaned.toLowerCase().startsWith('vless://')) return null;
+      try {
+        const url = new URL('http://' + cleaned.slice(8));
+        const uuid = decodeURIComponent(url.username || '').trim();
+        const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+        const port = url.port ? parseInt(url.port, 10) : 443;
+        if (!uuid || !host || !port) return null;
+        const sni = url.searchParams.get('sni') || url.searchParams.get('host') || '';
+        let remark = '';
+        const hashIdx = cleaned.indexOf('#');
+        if (hashIdx !== -1) {
+          try { remark = decodeURIComponent(cleaned.slice(hashIdx + 1)).trim(); }
+          catch { remark = cleaned.slice(hashIdx + 1).trim(); }
+        }
+        const name = remark || (sni ? sni + ' (' + host + ':' + port + ')' : host + ':' + port);
+        const dedupKey = uuid.toLowerCase() + '|' + host + '|' + port;
+        return { uri: cleaned, uuid, host, port, sni, name, dedupKey };
+      } catch {
+        return null;
+      }
+    }
+
+    function extractVlessFromText(text) {
+      const matches = text.match(/vless:\/\/[^\s"'<>]+/gi) || [];
+      const seen = new Set();
+      const result = [];
+      let dupes = 0;
+      for (const m of matches) {
+        const parsed = parseVlessUri(m);
+        if (!parsed) continue;
+        if (seen.has(parsed.dedupKey)) { dupes++; continue; }
+        seen.add(parsed.dedupKey);
+        result.push(parsed);
+      }
+      return { keys: result, totalRaw: matches.length, dupes };
+    }
+
+    function sanitizeFolderName(name) {
+      const ru = {'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'zh','з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ы':'y','э':'e','ю':'yu','я':'ya'};
+      return name.trim().toLowerCase().split('').map(c => ru[c] !== undefined ? ru[c] : c).join('')
+        .replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
+    }
+
+    function renderUI() {
+      const token = localStorage.getItem(STORAGE_KEYS.TOKEN) || '';
+      const gistId = localStorage.getItem(STORAGE_KEYS.GIST_ID) || '';
+      const owner = localStorage.getItem(STORAGE_KEYS.OWNER) || '<username>';
+
+      document.getElementById('ghToken').value = token;
+      document.getElementById('gistId').value = gistId;
+      document.getElementById('ownerLabel').textContent = owner !== '<username>' ? '@' + owner : '';
+
+      const tabsEl = document.getElementById('folderTabs');
+      tabsEl.innerHTML = '';
+      Object.keys(appState.folders).forEach(folderKey => {
+        const folder = appState.folders[folderKey];
+        const isActive = folderKey === appState.activeFolder;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = isActive
+          ? 'min-h-[40px] px-3.5 py-2 rounded-xl bg-sky-500 text-slate-950 font-semibold text-xs transition-colors'
+          : 'min-h-[40px] px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition-colors';
+        const titleMap = { all: 'Все (all.txt)', favourites: 'Любимые (favourites.txt)' };
+        const label = titleMap[folderKey] || (folderKey + '.txt');
+        btn.textContent = label + ' · ' + folder.keys.length + ' кл. · ' + folder.max_silent_days + ' дн.';
+        btn.onclick = () => {
+          appState.activeFolder = folderKey;
+          saveLocalState();
+          renderUI();
+        };
+        tabsEl.appendChild(btn);
+      });
+
+      const activeKey = appState.activeFolder;
+      const activeFolder = appState.folders[activeKey];
+      document.getElementById('activeFileLabel').textContent = activeKey + '.txt';
+      document.getElementById('activeFolderStats').textContent =
+        'Уникальных ключей: ' + activeFolder.keys.length + ' · Дедупликация по UUID + Host + Port';
+      document.getElementById('activeMaxDays').value = activeFolder.max_silent_days;
+
+      const cleanGistId = gistId || '<gist_id>';
+      document.getElementById('rawUrlDisplay').value =
+        'https://gist.githubusercontent.com/' + owner + '/' + cleanGistId + '/raw/' + activeKey + '.txt';
+
+      const listEl = document.getElementById('keysListContainer');
+      listEl.innerHTML = '';
+      if (activeFolder.keys.length === 0) {
+        listEl.innerHTML = '<div class="py-6 text-center text-xs text-slate-500">В папке ' + activeKey + '.txt пока нет ключей. Вставьте текст выше и нажмите «Добавить в текущую папку».</div>';
+      } else {
+        activeFolder.keys.forEach((uri, idx) => {
+          const parsed = parseVlessUri(uri) || { name: uri.slice(0, 32), host: '-', port: '-', uuid: '-' };
+          const row = document.createElement('div');
+          row.className = 'py-3 flex items-center justify-between gap-3';
+          row.innerHTML =
+            '<div class="min-w-0 flex-1">' +
+              '<div class="text-sm font-medium text-slate-100 truncate">' + parsed.name + '</div>' +
+              '<div class="text-xs font-mono text-slate-400 truncate">' +
+                parsed.host + ':' + parsed.port + ' · UUID ' + parsed.uuid.slice(0, 8) + '…' +
+              '</div>' +
+            '</div>' +
+            '<button type="button" data-idx="' + idx + '" class="min-h-[36px] px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-rose-950/60 text-xs text-slate-400 hover:text-rose-300 border border-slate-800 transition-colors">Удалить</button>';
+          row.querySelector('button').onclick = () => {
+            activeFolder.keys.splice(idx, 1);
+            saveLocalState();
+            renderUI();
+          };
+          listEl.appendChild(row);
+        });
+      }
+    }
+
+    document.getElementById('activeMaxDays').addEventListener('change', (e) => {
+      const val = Math.max(1, parseInt(e.target.value, 10) || 3);
+      appState.folders[appState.activeFolder].max_silent_days = val;
+      saveLocalState();
+      renderUI();
+    });
+
+    document.getElementById('btnCreateFolder').addEventListener('click', () => {
+      const rawName = document.getElementById('newFolderName').value;
+      const slug = sanitizeFolderName(rawName);
+      if (!slug) return showStatus('Введите корректное имя папки.', true);
+      const days = Math.max(1, parseInt(document.getElementById('newFolderDays').value, 10) || 3);
+      if (!appState.folders[slug]) {
+        appState.folders[slug] = { max_silent_days: days, keys: [] };
+      } else {
+        appState.folders[slug].max_silent_days = days;
+      }
+      appState.activeFolder = slug;
+      document.getElementById('newFolderName').value = '';
+      saveLocalState();
+      renderUI();
+      showStatus('Папка ' + slug + '.txt выбрана (порог ' + days + ' дн.).');
+    });
+
+    document.getElementById('rawTelegramInput').addEventListener('input', (e) => {
+      const { keys, totalRaw, dupes } = extractVlessFromText(e.target.value);
+      document.getElementById('parsePreviewInfo').textContent =
+        'Найдено ссылок: ' + totalRaw + ' · Уникальных: ' + keys.length + ' · Дубликатов в тексте: ' + dupes;
+    });
+
+    document.getElementById('btnClearInput').addEventListener('click', () => {
+      document.getElementById('rawTelegramInput').value = '';
+      document.getElementById('parsePreviewInfo').textContent = 'Поле очищено.';
+    });
+
+    function mergeParsedIntoActiveFolder() {
+      const rawText = document.getElementById('rawTelegramInput').value;
+      const { keys } = extractVlessFromText(rawText);
+      if (keys.length === 0) return { added: 0, skipped: 0 };
+
+      const folder = appState.folders[appState.activeFolder];
+      const existingDedup = new Set(
+        folder.keys.map(u => {
+          const p = parseVlessUri(u);
+          return p ? p.dedupKey : u;
+        })
+      );
+
+      let added = 0;
+      let skipped = 0;
+      for (const k of keys) {
+        if (existingDedup.has(k.dedupKey)) {
+          skipped++;
+        } else {
+          existingDedup.add(k.dedupKey);
+          folder.keys.push(k.uri);
+          added++;
+        }
+      }
+      saveLocalState();
+      renderUI();
+      return { added, skipped };
+    }
+
+    document.getElementById('btnAddParsedToFolder').addEventListener('click', () => {
+      const { added, skipped } = mergeParsedIntoActiveFolder();
+      showStatus('В папку ' + appState.activeFolder + '.txt добавлено новых ключей: ' + added + ' (пропущено дубликатов: ' + skipped + ').');
+    });
+
+    document.getElementById('btnSaveCreds').addEventListener('click', async () => {
+      const token = document.getElementById('ghToken').value.trim();
+      const gistId = document.getElementById('gistId').value.trim();
+      localStorage.setItem(STORAGE_KEYS.TOKEN, token);
+      localStorage.setItem(STORAGE_KEYS.GIST_ID, gistId);
+      if (!token || !gistId) {
+        renderUI();
+        return showStatus('Токен и Gist ID сохранены локально.', false);
+      }
+      await pullFromGist();
+    });
+
+    async function pullFromGist() {
+      const token = localStorage.getItem(STORAGE_KEYS.TOKEN) || '';
+      const gistId = localStorage.getItem(STORAGE_KEYS.GIST_ID) || '';
+      if (!token || !gistId) return showStatus('Укажите GitHub Token и Gist ID в настройках.', true);
+
+      try {
+        showStatus('Загрузка данных из GitHub Gist...');
+        const res = await fetch('https://api.github.com/gists/' + encodeURIComponent(gistId), {
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Accept': 'application/vnd.github+json'
+          }
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.owner && data.owner.login) {
+          localStorage.setItem(STORAGE_KEYS.OWNER, data.owner.login);
+        }
+
+        let cfgFolders = {};
+        if (data.files && data.files['config.json'] && data.files['config.json'].content) {
+          try {
+            const parsedCfg = JSON.parse(data.files['config.json'].content);
+            cfgFolders = parsedCfg.folders || parsedCfg;
+          } catch {}
+        }
+
+        Object.keys(data.files || {}).forEach(fname => {
+          if (!fname.endsWith('.txt')) return;
+          const slug = fname.slice(0, -4);
+          const rawContent = data.files[fname].content || '';
+          const extracted = extractVlessFromText(rawContent).keys.map(k => k.uri);
+          const cfgEntry = cfgFolders[slug];
+          const maxDays = typeof cfgEntry === 'object' && cfgEntry !== null
+            ? (cfgEntry.max_silent_days || 3)
+            : (typeof cfgEntry === 'number' ? cfgEntry : (slug === 'favourites' ? 7 : 3));
+          appState.folders[slug] = { max_silent_days: maxDays, keys: extracted };
+        });
+
+        saveLocalState();
+        renderUI();
+        showStatus('Успешно синхронизировано с Gist (' + (data.owner?.login || 'OK') + ').');
+      } catch (err) {
+        showStatus('Ошибка чтения Gist: ' + err.message, true);
+      }
+    }
+
+    document.getElementById('btnPullGist').addEventListener('click', pullFromGist);
+
+    document.getElementById('btnSyncGist').addEventListener('click', async () => {
+      if (document.getElementById('rawTelegramInput').value.trim()) {
+        mergeParsedIntoActiveFolder();
+      }
+      const token = localStorage.getItem(STORAGE_KEYS.TOKEN) || '';
+      const gistId = localStorage.getItem(STORAGE_KEYS.GIST_ID) || '';
+      if (!token || !gistId) return showStatus('Сначала введите GitHub Token и Gist ID.', true);
+
+      const filesPayload = {};
+      const configJson = { updated_at: new Date().toISOString(), folders: {} };
+
+      Object.keys(appState.folders).forEach(slug => {
+        const f = appState.folders[slug];
+        configJson.folders[slug] = { max_silent_days: Number(f.max_silent_days) || 3 };
+        filesPayload[slug + '.txt'] = {
+          content: f.keys.length > 0 ? f.keys.join('\n') + '\n' : '# Пустая папка\n'
+        };
+      });
+
+      filesPayload['config.json'] = {
+        content: JSON.stringify(configJson, null, 2) + '\n'
+      };
+
+      try {
+        showStatus('Отправка PATCH /gists/' + gistId + '...');
+        const res = await fetch('https://api.github.com/gists/' + encodeURIComponent(gistId), {
+          method: 'PATCH',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Accept': 'application/vnd.github+json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ files: filesPayload })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.owner && data.owner.login) {
+          localStorage.setItem(STORAGE_KEYS.OWNER, data.owner.login);
+        }
+        renderUI();
+        showStatus('Gist успешно обновлен! Файлы *.txt и config.json записаны.');
+      } catch (err) {
+        showStatus('Ошибка PATCH Gist: ' + err.message, true);
+      }
+    });
+
+    document.getElementById('btnCopyRawUrl').addEventListener('click', () => {
+      navigator.clipboard.writeText(document.getElementById('rawUrlDisplay').value);
+      showStatus('Прямая RAW-ссылка скопирована в буфер обмена.');
+    });
+
+    document.getElementById('btnCopyAllKeys').addEventListener('click', () => {
+      const keys = appState.folders[appState.activeFolder].keys;
+      navigator.clipboard.writeText(keys.join('\n'));
+      showStatus('Скопировано ключей: ' + keys.length);
+    });
+
+    renderUI();
+  </script>
+</body>
+</html>
