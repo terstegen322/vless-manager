@@ -320,6 +320,9 @@ def main() -> int:
             new_db[url] = {
                 "last_success_at": last_success,
                 "silent_days": silent_days,
+                "alive": is_alive,
+                "latency_ms": latency,
+                "last_checked_at": now_iso,
             }
 
     # 6. Фильтруем каждый *.txt файл по silent_days >= retention_days

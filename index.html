@@ -191,6 +191,8 @@
         <div class="meta-line" style="margin-bottom: 6px;">Постоянная прямая RAW-ссылка подписки:</div>
         <div class="raw-box" id="rawUrlDisplay">https://gist.githubusercontent.com/&lt;username&gt;/b9afa5ebb9d442f8a031e183f90cbaa2/raw/all.txt</div>
         <div class="row" style="margin-top: 8px;">
+          <button type="button" class="btn-primary btn-sm" id="btnCheckPing" style="background:#10b981; color:#032b28;">⚡ Проверить пинг</button>
+          <button type="button" class="btn-secondary btn-sm" id="btnSortPing">Сорт. по пингу</button>
           <button type="button" class="btn-secondary btn-sm" id="btnCopyRaw">Скопировать RAW-ссылку</button>
           <button type="button" class="btn-secondary btn-sm" id="btnOpenHapp">Открыть в Happ</button>
         </div>
@@ -320,6 +322,8 @@
       let state = {
         activeFolder: 'all.txt',
         deletedFiles: [],
+        sortByPing: false,
+        db: {},
         folders: [
           { filename: 'all.txt', name: 'Все', maxSilentDays: 1, keys: [] },
           { filename: 'favourites.txt', name: 'Любимые', maxSilentDays: 7, keys: [] }
@@ -328,7 +332,8 @@
       try {
         const savedState = JSON.parse(localStorage.getItem(STORAGE_STATE) || 'null');
         if (savedState && Array.isArray(savedState.folders) && savedState.folders.length) {
-          state = savedState;
+          state = Object.assign(state, savedState);
+          if (!state.db) state.db = {};
         }
       } catch (_) {}
 
@@ -413,7 +418,22 @@
           empty.textContent = 'В этой папке пока нет ключей.';
           elKeyList.appendChild(empty);
         } else {
-          current.keys.forEach(k => {
+          let listToRender = current.keys.slice();
+          if (state.sortByPing) {
+            listToRender.sort((a, b) => {
+              const sa = state.db && (state.db[a.raw] || state.db[a.id]);
+              const sb = state.db && (state.db[b.raw] || state.db[b.id]);
+              const okA = sa && (sa.alive !== false && sa.silent_days === 0);
+              const okB = sb && (sb.alive !== false && sb.silent_days === 0);
+              if (okA && !okB) return -1;
+              if (!okA && okB) return 1;
+              const pa = sa && sa.latency_ms != null ? sa.latency_ms : 99999;
+              const pb = sb && sb.latency_ms != null ? sb.latency_ms : 99999;
+              return pa - pb;
+            });
+          }
+
+          listToRender.forEach(k => {
             const row = document.createElement('div');
             row.className = 'key-item';
 
@@ -421,7 +441,22 @@
             info.className = 'key-info';
             const title = document.createElement('div');
             title.className = 'key-name';
-            title.textContent = k.name;
+
+            const dbStat = state.db && (state.db[k.raw] || state.db[k.id]);
+            const isAlive = dbStat && (dbStat.alive !== false && dbStat.silent_days === 0);
+            let badgeHtml = '';
+            if (dbStat) {
+              if (isAlive) {
+                const latency = dbStat.latency_ms != null ? dbStat.latency_ms + ' ms' : 'Онлайн';
+                badgeHtml = '<span style="display:inline-block; margin-left:8px; padding:2px 7px; border-radius:6px; font-size:11px; font-weight:600; background:rgba(16,185,129,0.15); color:#34d399; border:1px solid rgba(16,185,129,0.3);">🟢 ' + latency + '</span>';
+              } else {
+                badgeHtml = '<span style="display:inline-block; margin-left:8px; padding:2px 7px; border-radius:6px; font-size:11px; font-weight:600; background:rgba(244,63,94,0.15); color:#fb7185; border:1px solid rgba(244,63,94,0.3);">🔴 Недоступен (' + dbStat.silent_days + ' дн.)</span>';
+              }
+            } else {
+              badgeHtml = '<span style="display:inline-block; margin-left:8px; padding:2px 7px; border-radius:6px; font-size:11px; color:#64748b; background:rgba(30,41,59,0.6); border:1px solid rgba(51,65,85,0.6);">⚪ Не проверялся</span>';
+            }
+
+            title.innerHTML = k.name + badgeHtml;
             const sub = document.createElement('div');
             sub.className = 'key-sub';
             sub.textContent = k.host + ':' + k.port + (k.sni ? ' · sni: ' + k.sni : '');
@@ -524,6 +559,9 @@
                 retentionDays[k] = val;
                 retentionDays[k.replace(/\.txt$/i, '')] = val;
               });
+          if (files['db.json'] && files['db.json'].content) {
+            try {
+              state.db = JSON.parse(files['db.json'].content);
             } catch (_) {}
           }
 
@@ -706,6 +744,90 @@
         renderAll();
         setStatus('Папка ' + current.filename + ' помечена к удалению', false);
       };
+
+      const btnCheckPing = document.getElementById('btnCheckPing');
+      const btnSortPing = document.getElementById('btnSortPing');
+
+      if (btnSortPing) {
+        btnSortPing.onclick = () => {
+          state.sortByPing = !state.sortByPing;
+          btnSortPing.textContent = state.sortByPing ? '⚡ По пингу (вкл)' : 'Сорт. по пингу';
+          btnSortPing.className = state.sortByPing ? 'btn-primary btn-sm' : 'btn-secondary btn-sm';
+          persistLocal();
+          renderAll();
+        };
+      }
+
+      if (btnCheckPing) {
+        btnCheckPing.onclick = async () => {
+          creds.token = elToken.value.trim();
+          creds.gistId = normalizeGistId(elGistId.value);
+          if (!creds.token) {
+            setStatus('Укажите GitHub Token для запуска проверки пинга через GitHub Actions', true);
+            return;
+          }
+
+          const repoOwner = creds.owner || 'terstegen322';
+          const repoName = 'vless-manager';
+          btnCheckPing.disabled = true;
+          btnCheckPing.textContent = '⏳ Запуск...';
+          setStatus('Отправка запроса на проверку пинга в GitHub Actions...', false);
+
+          try {
+            const dispatchResp = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/actions/workflows/check.yml/dispatches`, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Bearer ' + creds.token,
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ ref: 'main' })
+            });
+
+            if (!dispatchResp.ok) {
+              const errJson = await dispatchResp.json().catch(() => ({}));
+              throw new Error(errJson.message || ('HTTP ' + dispatchResp.status));
+            }
+
+            setStatus('GitHub Actions запущен! Проверяем пинг серверов...', false);
+            btnCheckPing.textContent = '⏳ Проверка...';
+
+            await new Promise(r => setTimeout(r, 3000));
+
+            for (let attempt = 1; attempt <= 12; attempt++) {
+              btnCheckPing.textContent = `⏳ Пинг (${attempt * 3}с)...`;
+              try {
+                const runsResp = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs?per_page=1`, {
+                  headers: {
+                    'Authorization': 'Bearer ' + creds.token,
+                    'Accept': 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                  }
+                });
+                if (runsResp.ok) {
+                  const runsData = await runsResp.json();
+                  const latestRun = runsData.workflow_runs && runsData.workflow_runs[0];
+                  if (latestRun && latestRun.status === 'completed') {
+                    break;
+                  }
+                }
+              } catch (_) {}
+              await new Promise(r => setTimeout(r, 3000));
+            }
+
+            setStatus('Обновление базы и пинга из Gist...', false);
+            await loadFromGist();
+            btnCheckPing.textContent = '⚡ Проверить пинг';
+            btnCheckPing.disabled = false;
+            setStatus('Проверка пинга завершена! Данные обновлены.', false);
+          } catch (err) {
+            btnCheckPing.disabled = false;
+            btnCheckPing.textContent = '⚡ Проверить пинг';
+            setStatus('Ошибка запуска пинга: ' + err.message + ' (убедитесь, что токен имеет права repo и workflow)', true);
+          }
+        };
+      }
 
       document.getElementById('btnCopyRaw').onclick = async () => {
         const url = getRawSubscriptionUrl(getActiveFolder().filename);
