@@ -36,6 +36,6 @@ jobs:
 
       - name: Run VLESS key checker
         env:
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN || secrets.GIST_PAT }}
+          GIST_ID: ${{ secrets.GIST_ID || secrets.MY_GIST_ID }}
         run: python check_keys.py

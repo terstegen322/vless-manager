@@ -186,8 +186,8 @@ def parse_iso(val: str | None, default: datetime) -> datetime:
 
 
 def main() -> int:
-    gist_token = os.environ.get("GIST_TOKEN", "").strip()
-    gist_id = os.environ.get("GIST_ID", "").strip()
+    gist_token = (os.environ.get("GIST_TOKEN") or os.environ.get("GIST_PAT") or "").strip()
+    gist_id = (os.environ.get("GIST_ID") or os.environ.get("MY_GIST_ID") or "").strip()
 
     if not gist_token or not gist_id:
         print("Ошибка: задайте переменные окружения GIST_TOKEN и GIST_ID.", file=sys.stderr)
