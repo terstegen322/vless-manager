@@ -1,498 +1,720 @@
 <!DOCTYPE html>
-<html lang="ru" class="dark">
+<html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0B0F17" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#090d16" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="VLESS Hub" />
-  <title>VLESS Gist Manager — Happ & Invy</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@600;700&display=swap" rel="stylesheet" />
+  <meta name="apple-mobile-web-app-title" content="VLESS Vault" />
+  <title>VLESS Vault — Менеджер подписок Happ / Invy</title>
   <style>
-    body {
-      font-family: 'DM Sans', sans-serif;
-      background-color: #0B0F17;
-      color: #F1F5F9;
-      -webkit-tap-highlight-color: transparent;
+    :root {
+      --bg: #090d16;
+      --surface: #111827;
+      --surface-alt: #0d1321;
+      --border: #1e293b;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #7dd3fc;
+      --danger: #f87171;
+      --ok: #34d399;
+      --radius: 14px;
     }
-    h1, h2, h3, .font-display { font-family: 'Outfit', sans-serif; }
-    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: env(safe-area-inset-top, 0) 0 calc(28px + env(safe-area-inset-bottom, 0));
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding-bottom: 14px; border-bottom: 1px solid var(--border);
+    }
+    header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+    .meta-line { font-size: 0.78rem; color: var(--muted); }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .panel-title { font-size: 0.95rem; font-weight: 600; }
+    label { display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; color: var(--muted); }
+    input, textarea, select {
+      width: 100%; background: var(--surface-alt); color: var(--text);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 11px 12px; font-size: 0.9rem; outline: none;
+    }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+    textarea { min-height: 118px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 560px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+    .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    button {
+      min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid transparent;
+      font-size: 0.86rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s, border-color 0.15s;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-primary { background: var(--accent); color: #08111d; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: var(--surface-alt); color: var(--text); border-color: var(--border); }
+    .btn-secondary:hover { border-color: var(--muted); }
+    .btn-danger { background: transparent; color: var(--danger); border-color: rgba(248,113,113,0.3); min-height: 36px; padding: 0 10px; font-size: 0.78rem; }
+    .btn-sm { min-height: 36px; padding: 0 12px; font-size: 0.78rem; }
+    .tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+    .tab {
+      min-height: 40px; padding: 0 14px; border-radius: 9px; white-space: nowrap;
+      background: var(--surface-alt); color: var(--muted); border: 1px solid var(--border);
+    }
+    .tab.active { background: rgba(56, 189, 248, 0.14); color: var(--accent); border-color: var(--accent); }
+    .raw-box {
+      background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 0.78rem; word-break: break-all; color: #cbd5e1;
+    }
+    .key-list { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+    .key-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 11px 0; border-bottom: 1px solid var(--border);
+    }
+    .key-info { min-width: 0; flex: 1; }
+    .key-name { font-size: 0.88rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .key-sub { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.75rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .status-msg { font-size: 0.82rem; min-height: 1.2em; }
+    .status-ok { color: var(--ok); }
+    .status-err { color: var(--danger); }
+    .inline-days { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.84rem; color: var(--muted); }
+    .inline-days input { width: 74px; text-align: center; padding: 8px; font-variant-numeric: tabular-nums; }
   </style>
 </head>
-<body class="min-h-screen bg-[#0B0F17] text-slate-100 pb-20">
-  <header class="sticky top-0 z-30 bg-[#0B0F17]/90 backdrop-blur-md border-b border-slate-800/80 px-4 py-3.5">
-    <div class="max-w-3xl mx-auto flex items-center justify-between gap-4">
-      <span class="font-display text-lg font-bold tracking-tight text-white whitespace-nowrap">VLESS Gist Hub</span>
-      <button id="btnPullGist" type="button" class="min-h-[40px] px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-100 border border-slate-700 transition-colors whitespace-nowrap">
-        Загрузить из Gist
-      </button>
-    </div>
-  </header>
-
-  <main class="max-w-3xl mx-auto px-4 pt-5 space-y-6">
-    <!-- Статус уведомлений -->
-    <div id="statusBanner" class="hidden rounded-xl border px-4 py-3 text-sm"></div>
-
-    <!-- 1. Настройки GitHub Gist -->
-    <section class="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 sm:p-5 space-y-4">
-      <div class="flex items-center justify-between">
-        <h2 class="font-display text-base font-semibold text-white">1. Подключение к GitHub Gist</h2>
-        <span id="ownerLabel" class="text-xs font-mono text-slate-400"></span>
-      </div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-        <div>
-          <label class="block text-xs text-slate-400 mb-1.5" for="ghToken">GitHub Token (scope: gist)</label>
-          <input id="ghToken" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off"
-            class="w-full min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono text-slate-100 focus:outline-none focus:border-sky-500" />
-        </div>
-        <div>
-          <label class="block text-xs text-slate-400 mb-1.5" for="gistId">Gist ID</label>
-          <input id="gistId" type="text" placeholder="a1b2c3d4e5f67890..." autocomplete="off"
-            class="w-full min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono text-slate-100 focus:outline-none focus:border-sky-500" />
-        </div>
-      </div>
-      <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
-        <p class="text-xs text-slate-400">Данные сохраняются локально на устройстве в <code class="text-slate-300">localStorage</code>.</p>
-        <button id="btnSaveCreds" type="button" class="min-h-[44px] px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition-colors whitespace-nowrap">
-          Сохранить и проверить Gist
-        </button>
-      </div>
-    </section>
-
-    <!-- 2. Иерархия папок и пороги дней -->
-    <section class="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 sm:p-5 space-y-4">
+<body>
+  <div class="wrap">
+    <header>
       <div>
-        <h2 class="font-display text-base font-semibold text-white">2. Папки подписок и автоочистка</h2>
-        <p class="text-xs text-slate-400 mt-0.5">Выберите активную папку для добавления ключей и задайте порог удаления неактивных серверов.</p>
+        <h1>VLESS Vault</h1>
+        <div class="meta-line" id="syncInfo">Хранилище подписок GitHub Gist · Happ / Invy</div>
       </div>
+      <button type="button" class="btn-secondary btn-sm" id="btnLoadGist">Загрузить из Gist</button>
+    </header>
 
-      <!-- Табы папок -->
-      <div id="folderTabs" class="flex flex-wrap items-center gap-2"></div>
-
-      <!-- Создание новой папки -->
-      <div class="flex flex-col sm:flex-row gap-2.5 pt-2 border-t border-slate-800/80">
-        <input id="newFolderName" type="text" placeholder="Новая папка (например: Канада или fast)"
-          class="flex-1 min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 focus:outline-none focus:border-sky-500" />
-        <input id="newFolderDays" type="number" min="1" max="365" value="3"
-          class="w-full sm:w-28 min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono text-slate-100 focus:outline-none focus:border-sky-500"
-          title="Лимит дней молчания" />
-        <button id="btnCreateFolder" type="button" class="min-h-[44px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-xs font-medium transition-colors whitespace-nowrap">
-          Создать папку
-        </button>
+    <!-- 1. Настройки подключения -->
+    <section class="panel">
+      <div class="panel-head">
+        <span class="panel-title">1. Настройки GitHub Gist</span>
+        <span class="meta-line">Хранится локально в браузере</span>
       </div>
-
-      <!-- Настройка активной папки + Генератор RAW ссылки -->
-      <div class="rounded-xl bg-slate-950/90 border border-slate-800/90 p-4 space-y-3">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div class="text-sm font-semibold text-white">
-              Файл в Gist: <code id="activeFileLabel" class="text-sky-400 font-mono">all.txt</code>
-            </div>
-            <div id="activeFolderStats" class="text-xs text-slate-400 mt-0.5">Ключей в папке: 0</div>
-          </div>
-          <div class="flex items-center gap-2">
-            <label for="activeMaxDays" class="text-xs text-slate-300">Удалять неактивные через (дней):</label>
-            <input id="activeMaxDays" type="number" min="1" max="365" value="3"
-              class="w-20 min-h-[40px] px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm font-mono text-center text-white focus:outline-none focus:border-sky-500" />
-          </div>
-        </div>
-
-        <div class="space-y-1.5 pt-2 border-t border-slate-800/80">
-          <div class="flex items-center justify-between">
-            <span class="text-xs text-slate-400">Постоянная RAW-ссылка для Happ / Invy:</span>
-            <button id="btnCopyRawUrl" type="button" class="text-xs font-medium text-sky-400 hover:text-sky-300 transition-colors">
-              Скопировать ссылку
-            </button>
-          </div>
-          <input id="rawUrlDisplay" type="text" readonly
-            class="w-full min-h-[40px] px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-xs font-mono text-slate-300 select-all focus:outline-none" />
-        </div>
+      <div class="grid-2">
+        <label>
+          GitHub Personal Access Token (ghp_... с правом gist)
+          <input type="password" id="ghToken" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
+        </label>
+        <label>
+          Gist ID (или полная ссылка)
+          <input type="text" id="gistId" value="b9afa5ebb9d442f8a031e183f90cbaa2" placeholder="b9afa5ebb9d442f8a031e183f90cbaa2" autocomplete="off" />
+        </label>
+      </div>
+      <div class="row">
+        <button type="button" class="btn-secondary btn-sm" id="btnSaveCreds">Сохранить настройки</button>
+        <span class="status-msg" id="statusBar"></span>
       </div>
     </section>
 
-    <!-- 3. Парсер сырого текста из Telegram -->
-    <section class="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 sm:p-5 space-y-4">
-      <div class="flex items-center justify-between">
-        <h2 class="font-display text-base font-semibold text-white">3. Импорт и парсинг VLESS-ключей</h2>
-        <button id="btnClearInput" type="button" class="text-xs text-slate-400 hover:text-slate-200">Очистить поле</button>
+    <!-- 2. Парсер сырого текста из Telegram -->
+    <section class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2. Импорт ключей из Telegram</span>
+        <span class="meta-line" id="parseStats">Ожидание текста...</span>
       </div>
-      <textarea id="rawTelegramInput" rows="5"
-        placeholder="Вставьте сюда сообщение из Telegram-канала с текстом, эмодзи, датами и ссылками vless://..."
-        class="w-full p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs sm:text-sm font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-sky-500"></textarea>
+      <label>
+        Сырой пост с эмодзи, текстом и ссылками vless://
+        <textarea id="rawInput" placeholder="Вставьте сообщение из Telegram-канала со ссылками vless://..."></textarea>
+      </label>
+      <div class="grid-2">
+        <label>
+          Целевая папка для добавления
+          <select id="targetFolderSelect"></select>
+        </label>
+        <label style="justify-content: flex-end;">
+          <span>Дублировать в «Все» (all.txt)</span>
+          <select id="alsoAddToAll">
+            <option value="yes">Да, также добавить в all.txt</option>
+            <option value="no">Нет, только в выбранную папку</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <button type="button" class="btn-primary" id="btnParseAndSync">Добавить ключи и синхронизировать</button>
+        <button type="button" class="btn-secondary btn-sm" id="btnClearInput">Очистить поле</button>
+      </div>
+      <div id="parsedPreview" class="key-list" style="display:none;"></div>
+    </section>
 
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div id="parsePreviewInfo" class="text-xs text-slate-400">Вставьте текст для автоматического распознавания ссылок.</div>
-        <div class="flex flex-wrap items-center gap-2.5">
-          <button id="btnAddParsedToFolder" type="button" class="min-h-[44px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-xs font-medium transition-colors whitespace-nowrap">
-            Добавить в текущую папку
-          </button>
-          <button id="btnSyncGist" type="button" class="min-h-[44px] px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition-colors whitespace-nowrap">
-            Синхронизировать с Gist (PATCH)
-          </button>
+    <!-- 3. Папки, пороги дней и генератор RAW-ссылок -->
+    <section class="panel">
+      <div class="panel-head">
+        <span class="panel-title">3. Папки и RAW-ссылки для Happ / Invy</span>
+        <button type="button" class="btn-primary btn-sm" id="btnSyncAll">Сохранить всё в Gist</button>
+      </div>
+
+      <div class="tabs" id="folderTabs"></div>
+
+      <div class="row" style="padding-top: 2px;">
+        <input type="text" id="newFolderName" placeholder="Новая папка (например: Канада, Быстрые)" style="flex:1; min-width: 190px;" />
+        <button type="button" class="btn-secondary btn-sm" id="btnCreateFolder">+ Создать папку</button>
+      </div>
+
+      <div class="inline-days">
+        <span>Удалять неактивные ключи через</span>
+        <input type="number" id="folderMaxDays" min="1" max="365" value="1" />
+        <span>дней (retention_days)</span>
+        <button type="button" class="btn-danger" id="btnDeleteFolder" style="margin-left:auto; display:none;">Удалить папку</button>
+      </div>
+
+      <div>
+        <div class="meta-line" style="margin-bottom: 6px;">Постоянная прямая RAW-ссылка подписки:</div>
+        <div class="raw-box" id="rawUrlDisplay">https://gist.githubusercontent.com/&lt;username&gt;/b9afa5ebb9d442f8a031e183f90cbaa2/raw/all.txt</div>
+        <div class="row" style="margin-top: 8px;">
+          <button type="button" class="btn-secondary btn-sm" id="btnCopyRaw">Скопировать RAW-ссылку</button>
+          <button type="button" class="btn-secondary btn-sm" id="btnOpenHapp">Открыть в Happ</button>
         </div>
       </div>
-    </section>
 
-    <!-- 4. Список ключей в выбранной папке -->
-    <section class="rounded-2xl bg-slate-900/70 border border-slate-800 p-4 sm:p-5 space-y-3">
-      <div class="flex items-center justify-between">
-        <h2 class="font-display text-base font-semibold text-white">4. Ключи в выбранной папке</h2>
-        <button id="btnCopyAllKeys" type="button" class="text-xs text-sky-400 hover:text-sky-300 font-medium">Скопировать все vless://</button>
+      <div>
+        <div class="meta-line" id="folderKeysCount" style="margin-bottom: 6px;">Ключи в папке: 0</div>
+        <div class="key-list" id="folderKeyList"></div>
       </div>
-      <div id="keysListContainer" class="divide-y divide-slate-800/80"></div>
     </section>
-  </main>
+  </div>
 
   <script>
-    const STORAGE_KEYS = {
-      TOKEN: 'vless_hub_gh_token',
-      GIST_ID: 'vless_hub_gist_id',
-      OWNER: 'vless_hub_gist_owner',
-      STATE: 'vless_hub_folders_state'
-    };
+    (function () {
+      const STORAGE_CREDS = 'vless_vault_creds_v1';
+      const STORAGE_STATE = 'vless_vault_state_v1';
 
-    const defaultState = {
-      activeFolder: 'all',
-      folders: {
-        all: { max_silent_days: 3, keys: [] },
-        favourites: { max_silent_days: 7, keys: [] }
-      }
-    };
-
-    let appState = loadLocalState();
-
-    function loadLocalState() {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEYS.STATE);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && parsed.folders && parsed.folders.all && parsed.folders.favourites) {
-            return parsed;
-          }
-        }
-      } catch (e) {}
-      return JSON.parse(JSON.stringify(defaultState));
-    }
-
-    function saveLocalState() {
-      localStorage.setItem(STORAGE_KEYS.STATE, JSON.stringify(appState));
-    }
-
-    function showStatus(msg, isError = false) {
-      const el = document.getElementById('statusBanner');
-      el.textContent = msg;
-      el.className = isError
-        ? 'rounded-xl border border-rose-500/40 bg-rose-950/60 px-4 py-3 text-xs text-rose-200'
-        : 'rounded-xl border border-emerald-500/40 bg-emerald-950/60 px-4 py-3 text-xs text-emerald-200';
-      el.classList.remove('hidden');
-    }
-
-    function parseVlessUri(uri) {
-      const cleaned = uri.trim();
-      if (!cleaned.toLowerCase().startsWith('vless://')) return null;
-      try {
-        const url = new URL('http://' + cleaned.slice(8));
-        const uuid = decodeURIComponent(url.username || '').trim();
-        const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
-        const port = url.port ? parseInt(url.port, 10) : 443;
-        if (!uuid || !host || !port) return null;
-        const sni = url.searchParams.get('sni') || url.searchParams.get('host') || '';
-        let remark = '';
-        const hashIdx = cleaned.indexOf('#');
-        if (hashIdx !== -1) {
-          try { remark = decodeURIComponent(cleaned.slice(hashIdx + 1)).trim(); }
-          catch { remark = cleaned.slice(hashIdx + 1).trim(); }
-        }
-        const name = remark || (sni ? sni + ' (' + host + ':' + port + ')' : host + ':' + port);
-        const dedupKey = uuid.toLowerCase() + '|' + host + '|' + port;
-        return { uri: cleaned, uuid, host, port, sni, name, dedupKey };
-      } catch {
-        return null;
-      }
-    }
-
-    function extractVlessFromText(text) {
-      const matches = text.match(/vless:\/\/[^\s"'<>]+/gi) || [];
-      const seen = new Set();
-      const result = [];
-      let dupes = 0;
-      for (const m of matches) {
-        const parsed = parseVlessUri(m);
-        if (!parsed) continue;
-        if (seen.has(parsed.dedupKey)) { dupes++; continue; }
-        seen.add(parsed.dedupKey);
-        result.push(parsed);
-      }
-      return { keys: result, totalRaw: matches.length, dupes };
-    }
-
-    function sanitizeFolderName(name) {
-      const ru = {'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'zh','з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch','ш':'sh','щ':'shch','ы':'y','э':'e','ю':'yu','я':'ya'};
-      return name.trim().toLowerCase().split('').map(c => ru[c] !== undefined ? ru[c] : c).join('')
-        .replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
-    }
-
-    function renderUI() {
-      const token = localStorage.getItem(STORAGE_KEYS.TOKEN) || '';
-      const gistId = localStorage.getItem(STORAGE_KEYS.GIST_ID) || '';
-      const owner = localStorage.getItem(STORAGE_KEYS.OWNER) || '<username>';
-
-      document.getElementById('ghToken').value = token;
-      document.getElementById('gistId').value = gistId;
-      document.getElementById('ownerLabel').textContent = owner !== '<username>' ? '@' + owner : '';
-
-      const tabsEl = document.getElementById('folderTabs');
-      tabsEl.innerHTML = '';
-      Object.keys(appState.folders).forEach(folderKey => {
-        const folder = appState.folders[folderKey];
-        const isActive = folderKey === appState.activeFolder;
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = isActive
-          ? 'min-h-[40px] px-3.5 py-2 rounded-xl bg-sky-500 text-slate-950 font-semibold text-xs transition-colors'
-          : 'min-h-[40px] px-3.5 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium transition-colors';
-        const titleMap = { all: 'Все (all.txt)', favourites: 'Любимые (favourites.txt)' };
-        const label = titleMap[folderKey] || (folderKey + '.txt');
-        btn.textContent = label + ' · ' + folder.keys.length + ' кл. · ' + folder.max_silent_days + ' дн.';
-        btn.onclick = () => {
-          appState.activeFolder = folderKey;
-          saveLocalState();
-          renderUI();
-        };
-        tabsEl.appendChild(btn);
-      });
-
-      const activeKey = appState.activeFolder;
-      const activeFolder = appState.folders[activeKey];
-      document.getElementById('activeFileLabel').textContent = activeKey + '.txt';
-      document.getElementById('activeFolderStats').textContent =
-        'Уникальных ключей: ' + activeFolder.keys.length + ' · Дедупликация по UUID + Host + Port';
-      document.getElementById('activeMaxDays').value = activeFolder.max_silent_days;
-
-      const cleanGistId = gistId || '<gist_id>';
-      document.getElementById('rawUrlDisplay').value =
-        'https://gist.githubusercontent.com/' + owner + '/' + cleanGistId + '/raw/' + activeKey + '.txt';
-
-      const listEl = document.getElementById('keysListContainer');
-      listEl.innerHTML = '';
-      if (activeFolder.keys.length === 0) {
-        listEl.innerHTML = '<div class="py-6 text-center text-xs text-slate-500">В папке ' + activeKey + '.txt пока нет ключей. Вставьте текст выше и нажмите «Добавить в текущую папку».</div>';
-      } else {
-        activeFolder.keys.forEach((uri, idx) => {
-          const parsed = parseVlessUri(uri) || { name: uri.slice(0, 32), host: '-', port: '-', uuid: '-' };
-          const row = document.createElement('div');
-          row.className = 'py-3 flex items-center justify-between gap-3';
-          row.innerHTML =
-            '<div class="min-w-0 flex-1">' +
-              '<div class="text-sm font-medium text-slate-100 truncate">' + parsed.name + '</div>' +
-              '<div class="text-xs font-mono text-slate-400 truncate">' +
-                parsed.host + ':' + parsed.port + ' · UUID ' + parsed.uuid.slice(0, 8) + '…' +
-              '</div>' +
-            '</div>' +
-            '<button type="button" data-idx="' + idx + '" class="min-h-[36px] px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-rose-950/60 text-xs text-slate-400 hover:text-rose-300 border border-slate-800 transition-colors">Удалить</button>';
-          row.querySelector('button').onclick = () => {
-            activeFolder.keys.splice(idx, 1);
-            saveLocalState();
-            renderUI();
-          };
-          listEl.appendChild(row);
-        });
-      }
-    }
-
-    document.getElementById('activeMaxDays').addEventListener('change', (e) => {
-      const val = Math.max(1, parseInt(e.target.value, 10) || 3);
-      appState.folders[appState.activeFolder].max_silent_days = val;
-      saveLocalState();
-      renderUI();
-    });
-
-    document.getElementById('btnCreateFolder').addEventListener('click', () => {
-      const rawName = document.getElementById('newFolderName').value;
-      const slug = sanitizeFolderName(rawName);
-      if (!slug) return showStatus('Введите корректное имя папки.', true);
-      const days = Math.max(1, parseInt(document.getElementById('newFolderDays').value, 10) || 3);
-      if (!appState.folders[slug]) {
-        appState.folders[slug] = { max_silent_days: days, keys: [] };
-      } else {
-        appState.folders[slug].max_silent_days = days;
-      }
-      appState.activeFolder = slug;
-      document.getElementById('newFolderName').value = '';
-      saveLocalState();
-      renderUI();
-      showStatus('Папка ' + slug + '.txt выбрана (порог ' + days + ' дн.).');
-    });
-
-    document.getElementById('rawTelegramInput').addEventListener('input', (e) => {
-      const { keys, totalRaw, dupes } = extractVlessFromText(e.target.value);
-      document.getElementById('parsePreviewInfo').textContent =
-        'Найдено ссылок: ' + totalRaw + ' · Уникальных: ' + keys.length + ' · Дубликатов в тексте: ' + dupes;
-    });
-
-    document.getElementById('btnClearInput').addEventListener('click', () => {
-      document.getElementById('rawTelegramInput').value = '';
-      document.getElementById('parsePreviewInfo').textContent = 'Поле очищено.';
-    });
-
-    function mergeParsedIntoActiveFolder() {
-      const rawText = document.getElementById('rawTelegramInput').value;
-      const { keys } = extractVlessFromText(rawText);
-      if (keys.length === 0) return { added: 0, skipped: 0 };
-
-      const folder = appState.folders[appState.activeFolder];
-      const existingDedup = new Set(
-        folder.keys.map(u => {
-          const p = parseVlessUri(u);
-          return p ? p.dedupKey : u;
-        })
-      );
-
-      let added = 0;
-      let skipped = 0;
-      for (const k of keys) {
-        if (existingDedup.has(k.dedupKey)) {
-          skipped++;
-        } else {
-          existingDedup.add(k.dedupKey);
-          folder.keys.push(k.uri);
-          added++;
-        }
-      }
-      saveLocalState();
-      renderUI();
-      return { added, skipped };
-    }
-
-    document.getElementById('btnAddParsedToFolder').addEventListener('click', () => {
-      const { added, skipped } = mergeParsedIntoActiveFolder();
-      showStatus('В папку ' + appState.activeFolder + '.txt добавлено новых ключей: ' + added + ' (пропущено дубликатов: ' + skipped + ').');
-    });
-
-    document.getElementById('btnSaveCreds').addEventListener('click', async () => {
-      const token = document.getElementById('ghToken').value.trim();
-      const gistId = document.getElementById('gistId').value.trim();
-      localStorage.setItem(STORAGE_KEYS.TOKEN, token);
-      localStorage.setItem(STORAGE_KEYS.GIST_ID, gistId);
-      if (!token || !gistId) {
-        renderUI();
-        return showStatus('Токен и Gist ID сохранены локально.', false);
-      }
-      await pullFromGist();
-    });
-
-    async function pullFromGist() {
-      const token = localStorage.getItem(STORAGE_KEYS.TOKEN) || '';
-      const gistId = localStorage.getItem(STORAGE_KEYS.GIST_ID) || '';
-      if (!token || !gistId) return showStatus('Укажите GitHub Token и Gist ID в настройках.', true);
-
-      try {
-        showStatus('Загрузка данных из GitHub Gist...');
-        const res = await fetch('https://api.github.com/gists/' + encodeURIComponent(gistId), {
-          headers: {
-            'Authorization': 'Bearer ' + token,
-            'Accept': 'application/vnd.github+json'
-          }
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        if (data.owner && data.owner.login) {
-          localStorage.setItem(STORAGE_KEYS.OWNER, data.owner.login);
-        }
-
-        let cfgFolders = {};
-        if (data.files && data.files['config.json'] && data.files['config.json'].content) {
-          try {
-            const parsedCfg = JSON.parse(data.files['config.json'].content);
-            cfgFolders = parsedCfg.folders || parsedCfg;
-          } catch {}
-        }
-
-        Object.keys(data.files || {}).forEach(fname => {
-          if (!fname.endsWith('.txt')) return;
-          const slug = fname.slice(0, -4);
-          const rawContent = data.files[fname].content || '';
-          const extracted = extractVlessFromText(rawContent).keys.map(k => k.uri);
-          const cfgEntry = cfgFolders[slug];
-          const maxDays = typeof cfgEntry === 'object' && cfgEntry !== null
-            ? (cfgEntry.max_silent_days || 3)
-            : (typeof cfgEntry === 'number' ? cfgEntry : (slug === 'favourites' ? 7 : 3));
-          appState.folders[slug] = { max_silent_days: maxDays, keys: extracted };
-        });
-
-        saveLocalState();
-        renderUI();
-        showStatus('Успешно синхронизировано с Gist (' + (data.owner?.login || 'OK') + ').');
-      } catch (err) {
-        showStatus('Ошибка чтения Gist: ' + err.message, true);
-      }
-    }
-
-    document.getElementById('btnPullGist').addEventListener('click', pullFromGist);
-
-    document.getElementById('btnSyncGist').addEventListener('click', async () => {
-      if (document.getElementById('rawTelegramInput').value.trim()) {
-        mergeParsedIntoActiveFolder();
-      }
-      const token = localStorage.getItem(STORAGE_KEYS.TOKEN) || '';
-      const gistId = localStorage.getItem(STORAGE_KEYS.GIST_ID) || '';
-      if (!token || !gistId) return showStatus('Сначала введите GitHub Token и Gist ID.', true);
-
-      const filesPayload = {};
-      const configJson = { updated_at: new Date().toISOString(), folders: {} };
-
-      Object.keys(appState.folders).forEach(slug => {
-        const f = appState.folders[slug];
-        configJson.folders[slug] = { max_silent_days: Number(f.max_silent_days) || 3 };
-        filesPayload[slug + '.txt'] = {
-          content: f.keys.length > 0 ? f.keys.join('\n') + '\n' : '# Пустая папка\n'
-        };
-      });
-
-      filesPayload['config.json'] = {
-        content: JSON.stringify(configJson, null, 2) + '\n'
+      const CYR_MAP = {
+        а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'yo',ж:'zh',з:'z',и:'i',й:'y',к:'k',л:'l',м:'m',
+        н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',х:'kh',ц:'ts',ч:'ch',ш:'sh',щ:'shch',
+        ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'
       };
 
-      try {
-        showStatus('Отправка PATCH /gists/' + gistId + '...');
-        const res = await fetch('https://api.github.com/gists/' + encodeURIComponent(gistId), {
-          method: 'PATCH',
-          headers: {
-            'Authorization': 'Bearer ' + token,
-            'Accept': 'application/vnd.github+json',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ files: filesPayload })
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        if (data.owner && data.owner.login) {
-          localStorage.setItem(STORAGE_KEYS.OWNER, data.owner.login);
-        }
-        renderUI();
-        showStatus('Gist успешно обновлен! Файлы *.txt и config.json записаны.');
-      } catch (err) {
-        showStatus('Ошибка PATCH Gist: ' + err.message, true);
+      function slugifyFolder(title) {
+        const low = title.trim().toLowerCase();
+        if (low === 'все' || low === 'all') return 'all.txt';
+        if (low === 'любимые' || low === 'favourites' || low === 'favorites') return 'favourites.txt';
+        const base = low.endsWith('.txt') ? low.slice(0, -4) : low;
+        let out = '';
+        for (const ch of base) out += (CYR_MAP[ch] !== undefined ? CYR_MAP[ch] : ch);
+        out = out.replace(/[^a-z0-9_-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        return (out || 'folder') + '.txt';
       }
-    });
 
-    document.getElementById('btnCopyRawUrl').addEventListener('click', () => {
-      navigator.clipboard.writeText(document.getElementById('rawUrlDisplay').value);
-      showStatus('Прямая RAW-ссылка скопирована в буфер обмена.');
-    });
+      function normalizeGistId(val) {
+        const s = (val || '').trim().replace(/\/+$/, '');
+        if (!s) return 'b9afa5ebb9d442f8a031e183f90cbaa2';
+        const parts = s.split('/');
+        return parts[parts.length - 1].split('?')[0].split('#')[0] || 'b9afa5ebb9d442f8a031e183f90cbaa2';
+      }
 
-    document.getElementById('btnCopyAllKeys').addEventListener('click', () => {
-      const keys = appState.folders[appState.activeFolder].keys;
-      navigator.clipboard.writeText(keys.join('\n'));
-      showStatus('Скопировано ключей: ' + keys.length);
-    });
+      function safeDecode(str) {
+        try { return decodeURIComponent(str.replace(/\+/g, '%20')); } catch (_) { return str; }
+      }
 
-    renderUI();
+      function parseSingleVless(raw) {
+        const clean = (raw || '').trim().replace(/^[`"'<(\[]+/, '').replace(/[`"'>.,;]+$/, '');
+        if (!clean.toLowerCase().startsWith('vless://')) return null;
+        const body = clean.slice(8);
+        const hIdx = body.indexOf('#');
+        const beforeHash = hIdx >= 0 ? body.slice(0, hIdx) : body;
+        const fragment = hIdx >= 0 ? safeDecode(body.slice(hIdx + 1)).trim() : '';
+
+        const qIdx = beforeHash.indexOf('?');
+        const authority = (qIdx >= 0 ? beforeHash.slice(0, qIdx) : beforeHash).replace(/\/+$/, '');
+        const query = qIdx >= 0 ? beforeHash.slice(qIdx + 1) : '';
+
+        const atIdx = authority.lastIndexOf('@');
+        if (atIdx <= 0) return null;
+        const uuid = safeDecode(authority.slice(0, atIdx)).trim();
+        const hostPort = authority.slice(atIdx + 1).trim();
+        if (!uuid || !hostPort) return null;
+
+        let host = '', port = 443;
+        if (hostPort.startsWith('[')) {
+          const close = hostPort.indexOf(']');
+          if (close === -1) return null;
+          host = hostPort.slice(1, close).trim().toLowerCase();
+          const rest = hostPort.slice(close + 1).trim();
+          if (rest && rest.startsWith(':')) {
+            port = parseInt(rest.slice(1), 10);
+          }
+        } else {
+          const c1 = hostPort.indexOf(':'), c2 = hostPort.lastIndexOf(':');
+          if (c1 !== -1 && c1 === c2) {
+            host = hostPort.slice(0, c1).trim().toLowerCase();
+            port = parseInt(hostPort.slice(c1 + 1), 10);
+          } else if (c1 === -1) {
+            host = hostPort.toLowerCase();
+          } else {
+            host = hostPort.replace(/^\[|\]$/g, '').toLowerCase();
+          }
+        }
+
+        if (!host || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+        const params = new URLSearchParams(query);
+        const sni = (params.get('sni') || params.get('host') || '').trim();
+        const name = fragment || (sni ? sni + ' (' + host + ')' : host + ':' + port);
+        return {
+          id: uuid.toLowerCase() + '@' + host + ':' + port,
+          raw: clean,
+          uuid,
+          host,
+          port,
+          sni,
+          name
+        };
+      }
+
+      function extractVlessBatch(text) {
+        const regex = /vless:\/\/(?:(?!vless:\/\/)[^\s<>"'`])+/gi;
+        const matches = (text || '').match(regex) || [];
+        const seen = new Set();
+        const unique = [];
+        let valid = 0;
+        for (const m of matches) {
+          const p = parseSingleVless(m);
+          if (!p) continue;
+          valid++;
+          if (!seen.has(p.id)) {
+            seen.add(p.id);
+            unique.push(p);
+          }
+        }
+        return { unique, valid, duplicates: Math.max(0, valid - unique.length) };
+      }
+
+      let creds = { token: '', gistId: 'b9afa5ebb9d442f8a031e183f90cbaa2', owner: '' };
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_CREDS) || '{}');
+        if (saved && typeof saved === 'object') {
+          creds = Object.assign(creds, saved);
+          if (!creds.gistId) creds.gistId = 'b9afa5ebb9d442f8a031e183f90cbaa2';
+        }
+      } catch (_) {}
+
+      let state = {
+        activeFolder: 'all.txt',
+        deletedFiles: [],
+        folders: [
+          { filename: 'all.txt', name: 'Все', maxSilentDays: 1, keys: [] },
+          { filename: 'favourites.txt', name: 'Любимые', maxSilentDays: 7, keys: [] }
+        ]
+      };
+      try {
+        const savedState = JSON.parse(localStorage.getItem(STORAGE_STATE) || 'null');
+        if (savedState && Array.isArray(savedState.folders) && savedState.folders.length) {
+          state = savedState;
+        }
+      } catch (_) {}
+
+      const elToken = document.getElementById('ghToken');
+      const elGistId = document.getElementById('gistId');
+      const elStatus = document.getElementById('statusBar');
+      const elSyncInfo = document.getElementById('syncInfo');
+      const elRawInput = document.getElementById('rawInput');
+      const elParseStats = document.getElementById('parseStats');
+      const elParsedPreview = document.getElementById('parsedPreview');
+      const elTargetSelect = document.getElementById('targetFolderSelect');
+      const elAlsoAll = document.getElementById('alsoAddToAll');
+      const elFolderTabs = document.getElementById('folderTabs');
+      const elNewFolder = document.getElementById('newFolderName');
+      const elMaxDays = document.getElementById('folderMaxDays');
+      const elDeleteFolder = document.getElementById('btnDeleteFolder');
+      const elRawUrl = document.getElementById('rawUrlDisplay');
+      const elKeysCount = document.getElementById('folderKeysCount');
+      const elKeyList = document.getElementById('folderKeyList');
+
+      elToken.value = creds.token || '';
+      elGistId.value = creds.gistId || 'b9afa5ebb9d442f8a031e183f90cbaa2';
+
+      function setStatus(msg, isError) {
+        elStatus.textContent = msg;
+        elStatus.className = 'status-msg ' + (isError ? 'status-err' : 'status-ok');
+      }
+
+      function persistLocal() {
+        localStorage.setItem(STORAGE_CREDS, JSON.stringify(creds));
+        localStorage.setItem(STORAGE_STATE, JSON.stringify(state));
+      }
+
+      function getActiveFolder() {
+        return state.folders.find(f => f.filename === state.activeFolder) || state.folders[0];
+      }
+
+      function getRawSubscriptionUrl(filename) {
+        const user = creds.owner || '<username>';
+        const gid = creds.gistId || 'b9afa5ebb9d442f8a031e183f90cbaa2';
+        return 'https://gist.githubusercontent.com/' + user + '/' + gid + '/raw/' + filename;
+      }
+
+      function renderAll() {
+        const current = getActiveFolder();
+        state.activeFolder = current.filename;
+
+        const prevTarget = elTargetSelect.value || current.filename;
+        elTargetSelect.innerHTML = '';
+        state.folders.forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f.filename;
+          opt.textContent = f.name + ' (' + f.filename + ' · ' + f.maxSilentDays + ' дн.)';
+          elTargetSelect.appendChild(opt);
+        });
+        if (state.folders.some(f => f.filename === prevTarget)) {
+          elTargetSelect.value = prevTarget;
+        }
+
+        elFolderTabs.innerHTML = '';
+        state.folders.forEach(f => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'tab' + (f.filename === current.filename ? ' active' : '');
+          btn.textContent = f.name + ' · ' + f.keys.length;
+          btn.onclick = () => { state.activeFolder = f.filename; persistLocal(); renderAll(); };
+          elFolderTabs.appendChild(btn);
+        });
+
+        elMaxDays.value = String(current.maxSilentDays);
+        const isProtected = current.filename === 'all.txt' || current.filename === 'favourites.txt';
+        elDeleteFolder.style.display = isProtected ? 'none' : 'inline-flex';
+
+        elRawUrl.textContent = getRawSubscriptionUrl(current.filename);
+        elKeysCount.textContent = 'Ключи в папке «' + current.name + '» (' + current.filename + '): ' + current.keys.length;
+
+        elKeyList.innerHTML = '';
+        if (current.keys.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'meta-line';
+          empty.style.padding = '12px 0';
+          empty.textContent = 'В этой папке пока нет ключей.';
+          elKeyList.appendChild(empty);
+        } else {
+          current.keys.forEach(k => {
+            const row = document.createElement('div');
+            row.className = 'key-item';
+
+            const info = document.createElement('div');
+            info.className = 'key-info';
+            const title = document.createElement('div');
+            title.className = 'key-name';
+            title.textContent = k.name;
+            const sub = document.createElement('div');
+            sub.className = 'key-sub';
+            sub.textContent = k.host + ':' + k.port + (k.sni ? ' · sni: ' + k.sni : '');
+            info.appendChild(title);
+            info.appendChild(sub);
+
+            const actions = document.createElement('div');
+            actions.className = 'row';
+            if (current.filename !== 'favourites.txt') {
+              const favBtn = document.createElement('button');
+              favBtn.type = 'button';
+              favBtn.className = 'btn-secondary btn-sm';
+              favBtn.textContent = 'В Любимые';
+              favBtn.onclick = () => {
+                const fav = state.folders.find(f => f.filename === 'favourites.txt');
+                if (fav && !fav.keys.some(x => x.id === k.id)) {
+                  fav.keys.unshift(k);
+                  persistLocal();
+                  renderAll();
+                  setStatus('Ключ добавлен в «Любимые»', false);
+                }
+              };
+              actions.appendChild(favBtn);
+            }
+
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'btn-danger';
+            delBtn.textContent = 'Удалить';
+            delBtn.onclick = () => {
+              current.keys = current.keys.filter(x => x.id !== k.id);
+              persistLocal();
+              renderAll();
+            };
+            actions.appendChild(delBtn);
+
+            row.appendChild(info);
+            row.appendChild(actions);
+            elKeyList.appendChild(row);
+          });
+        }
+
+        if (creds.owner && creds.gistId) {
+          elSyncInfo.textContent = 'Gist: ' + creds.owner + '/' + creds.gistId.slice(0, 8) + '…';
+        }
+      }
+
+      function updateLivePreview() {
+        const res = extractVlessBatch(elRawInput.value);
+        if (!elRawInput.value.trim()) {
+          elParseStats.textContent = 'Ожидание текста...';
+          elParsedPreview.style.display = 'none';
+          return;
+        }
+        elParseStats.textContent = 'Найдено уникальных: ' + res.unique.length + (res.duplicates ? ' (дубликатов скрыто: ' + res.duplicates + ')' : '');
+        elParsedPreview.innerHTML = '';
+        elParsedPreview.style.display = res.unique.length ? 'flex' : 'none';
+        res.unique.slice(0, 8).forEach(k => {
+          const item = document.createElement('div');
+          item.className = 'key-item';
+          item.innerHTML = '<div class="key-info"><div class="key-name"></div><div class="key-sub"></div></div>';
+          item.querySelector('.key-name').textContent = k.name;
+          item.querySelector('.key-sub').textContent = k.host + ':' + k.port + (k.sni ? ' · ' + k.sni : '');
+          elParsedPreview.appendChild(item);
+        });
+      }
+
+      async function loadFromGist() {
+        creds.token = elToken.value.trim();
+        creds.gistId = normalizeGistId(elGistId.value);
+        elGistId.value = creds.gistId;
+        persistLocal();
+
+        if (!creds.token || !creds.gistId) {
+          setStatus('Укажите GitHub Token и Gist ID', true);
+          return;
+        }
+
+        setStatus('Загрузка из GitHub Gist...', false);
+        try {
+          const resp = await fetch('https://api.github.com/gists/' + encodeURIComponent(creds.gistId), {
+            headers: {
+              'Authorization': 'Bearer ' + creds.token,
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28'
+            }
+          });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          if (data.owner && data.owner.login) creds.owner = data.owner.login;
+
+          const files = data.files || {};
+          let retentionDays = { all: 1, favourites: 7 };
+          if (files['config.json'] && files['config.json'].content) {
+            try {
+              const parsed = JSON.parse(files['config.json'].content);
+              const src = parsed.retention_days || parsed.folders || parsed || {};
+              Object.keys(src).forEach(k => {
+                const val = typeof src[k] === 'number' ? src[k] : (src[k]?.max_silent_days || 3);
+                retentionDays[k] = val;
+                retentionDays[k.replace(/\.txt$/i, '')] = val;
+              });
+            } catch (_) {}
+          }
+
+          const names = new Set(['all.txt', 'favourites.txt']);
+          Object.keys(files).forEach(fn => { if (fn.endsWith('.txt')) names.add(fn); });
+
+          const loadedFolders = [];
+          for (const fn of names) {
+            const stem = fn.slice(0, -4);
+            const defDays = fn === 'all.txt' ? 1 : (fn === 'favourites.txt' ? 7 : 3);
+            const rDays = retentionDays[fn] ?? retentionDays[stem] ?? defDays;
+            const defName = fn === 'all.txt' ? 'Все' : (fn === 'favourites.txt' ? 'Любимые' : stem);
+            const content = (files[fn] && files[fn].content) ? files[fn].content : '';
+            const batch = extractVlessBatch(content);
+            loadedFolders.push({
+              filename: fn,
+              name: defName,
+              maxSilentDays: rDays,
+              keys: batch.unique
+            });
+          }
+
+          state.folders = loadedFolders;
+          state.deletedFiles = [];
+          persistLocal();
+          renderAll();
+          setStatus('Данные успешно загружены из Gist', false);
+        } catch (err) {
+          setStatus('Ошибка чтения Gist: ' + err.message, true);
+        }
+      }
+
+      async function syncToGist() {
+        creds.token = elToken.value.trim();
+        creds.gistId = normalizeGistId(elGistId.value);
+        elGistId.value = creds.gistId;
+        persistLocal();
+
+        if (!creds.token || !creds.gistId) {
+          setStatus('Сохранено локально (укажите Token для отправки в Gist)', true);
+          return;
+        }
+
+        setStatus('Синхронизация с GitHub Gist...', false);
+        const retentionObj = {};
+        const filesPayload = {};
+
+        state.folders.forEach(f => {
+          const stem = f.filename.replace(/\.txt$/i, '');
+          retentionObj[stem] = Math.max(1, parseInt(f.maxSilentDays, 10) || 1);
+          filesPayload[f.filename] = {
+            content: f.keys.length ? f.keys.map(k => k.raw).join('\n') + '\n' : '# empty\n'
+          };
+        });
+
+        (state.deletedFiles || []).forEach(delFn => {
+          if (!state.folders.some(f => f.filename === delFn)) {
+            filesPayload[delFn] = null;
+          }
+        });
+
+        filesPayload['config.json'] = {
+          content: JSON.stringify({ retention_days: retentionObj }, null, 2) + '\n'
+        };
+
+        try {
+          const resp = await fetch('https://api.github.com/gists/' + encodeURIComponent(creds.gistId), {
+            method: 'PATCH',
+            headers: {
+              'Authorization': 'Bearer ' + creds.token,
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ files: filesPayload })
+          });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          if (data.owner && data.owner.login) creds.owner = data.owner.login;
+          state.deletedFiles = [];
+          persistLocal();
+          renderAll();
+          setStatus('Gist успешно обновлен (config.json + .txt файлы)', false);
+        } catch (err) {
+          setStatus('Ошибка PATCH Gist: ' + err.message, true);
+        }
+      }
+
+      document.getElementById('btnSaveCreds').onclick = () => {
+        creds.token = elToken.value.trim();
+        creds.gistId = normalizeGistId(elGistId.value);
+        elGistId.value = creds.gistId;
+        persistLocal();
+        renderAll();
+        setStatus('Настройки сохранены в localStorage', false);
+      };
+
+      document.getElementById('btnLoadGist').onclick = loadFromGist;
+      document.getElementById('btnSyncAll').onclick = syncToGist;
+      elRawInput.addEventListener('input', updateLivePreview);
+      document.getElementById('btnClearInput').onclick = () => { elRawInput.value = ''; updateLivePreview(); };
+
+      document.getElementById('btnParseAndSync').onclick = async () => {
+        const batch = extractVlessBatch(elRawInput.value);
+        if (!batch.unique.length) {
+          setStatus('В тексте не найдено ссылок vless://', true);
+          return;
+        }
+        const targetFn = elTargetSelect.value || 'all.txt';
+        const target = state.folders.find(f => f.filename === targetFn);
+        let added = 0;
+
+        const mergeInto = (folder) => {
+          if (!folder) return 0;
+          const existing = new Set(folder.keys.map(k => k.id));
+          let count = 0;
+          batch.unique.forEach(k => {
+            if (!existing.has(k.id)) {
+              existing.add(k.id);
+              folder.keys.push(k);
+              count++;
+            }
+          });
+          return count;
+        };
+
+        added += mergeInto(target);
+        if (elAlsoAll.value === 'yes' && targetFn !== 'all.txt') {
+          mergeInto(state.folders.find(f => f.filename === 'all.txt'));
+        }
+
+        state.activeFolder = targetFn;
+        elRawInput.value = '';
+        updateLivePreview();
+        persistLocal();
+        renderAll();
+        await syncToGist();
+        if (!creds.token || !creds.gistId) {
+          setStatus('Добавлено ключей: ' + added + ' (локально)', false);
+        }
+      };
+
+      document.getElementById('btnCreateFolder').onclick = () => {
+        const title = elNewFolder.value.trim();
+        if (!title) return;
+        const filename = slugifyFolder(title);
+        if (state.folders.some(f => f.filename === filename)) {
+          setStatus('Папка ' + filename + ' уже существует', true);
+          return;
+        }
+        state.folders.push({
+          filename,
+          name: title,
+          maxSilentDays: 3,
+          keys: []
+        });
+        state.activeFolder = filename;
+        elNewFolder.value = '';
+        persistLocal();
+        renderAll();
+        setStatus('Создана папка «' + title + '» (' + filename + ')', false);
+      };
+
+      elMaxDays.onchange = () => {
+        const current = getActiveFolder();
+        current.maxSilentDays = Math.max(1, parseInt(elMaxDays.value, 10) || 1);
+        elMaxDays.value = String(current.maxSilentDays);
+        persistLocal();
+        setStatus('Порог retention_days для «' + current.name + '»: ' + current.maxSilentDays + ' дн.', false);
+      };
+
+      elDeleteFolder.onclick = () => {
+        const current = getActiveFolder();
+        if (current.filename === 'all.txt' || current.filename === 'favourites.txt') return;
+        state.deletedFiles = state.deletedFiles || [];
+        state.deletedFiles.push(current.filename);
+        state.folders = state.folders.filter(f => f.filename !== current.filename);
+        state.activeFolder = 'all.txt';
+        persistLocal();
+        renderAll();
+        setStatus('Папка ' + current.filename + ' помечена к удалению', false);
+      };
+
+      document.getElementById('btnCopyRaw').onclick = async () => {
+        const url = getRawSubscriptionUrl(getActiveFolder().filename);
+        try {
+          await navigator.clipboard.writeText(url);
+          setStatus('RAW-ссылка скопирована в буфер обмена', false);
+        } catch (_) {
+          setStatus('Не удалось скопировать автоматически', true);
+        }
+      };
+
+      document.getElementById('btnOpenHapp').onclick = () => {
+        const url = getRawSubscriptionUrl(getActiveFolder().filename);
+        window.location.href = 'happ://add/' + url;
+      };
+
+      renderAll();
+    })();
   </script>
 </body>
 </html>
