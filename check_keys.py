@@ -19,7 +19,6 @@ check_keys.py — Фоновый скрипт проверки и очистки
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import socket
@@ -53,7 +52,9 @@ EMPTY_FILE_CONTENT = "# empty\n"
 
 # Название подписки в Happ / Incy. Gist не умеет отдавать HTTP-заголовок profile-title, но оба клиента
 # читают его и из ПЕРВОЙ строки тела подписки: «#profile-title: Название» (в список серверов эта
-# строка не попадает). Максимум 25 символов; не-ASCII (кириллица) передаём как «base64:<UTF-8>».
+# строка не попадает). Максимум 25 символов. Название — обычный UTF-8 текст: Happ допускает plain
+# text, а формат «base64:…» для profile-title в его документации не описан (в Happ при проверке
+# он отображался как набор букв).
 TITLE_PREFIX = "#profile-title"
 MAX_TITLE_LEN = 25
 DEFAULT_TITLES: dict[str, str] = {"hub": "Хаб", "favourites": "Любимые", "all": "Все"}
@@ -61,9 +62,7 @@ DEFAULT_TITLES: dict[str, str] = {"hub": "Хаб", "favourites": "Любимые
 
 def title_directive(title: str) -> str:
     clean = " ".join(title.split())[:MAX_TITLE_LEN] or "VLESS"
-    if clean.isascii():
-        return f"{TITLE_PREFIX}: {clean}"
-    return f"{TITLE_PREFIX}: base64:" + base64.b64encode(clean.encode("utf-8")).decode("ascii")
+    return f"{TITLE_PREFIX}: {clean}"
 
 
 def with_title_header(content: str, title: str) -> str:

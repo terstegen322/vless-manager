@@ -245,14 +245,12 @@
       }
 
       // Название подписки для Happ / Incy: первая строка файла «#profile-title: Название»
-      // (Gist не умеет отдавать HTTP-заголовок). Макс. 25 символов; не-ASCII — как base64 UTF-8.
+      // (Gist не умеет отдавать HTTP-заголовок). Макс. 25 символов, обычный UTF-8 текст
+      // (Happ допускает plain text; формат base64 для profile-title у него не описан).
       // Должно совпадать с title_directive() в check_keys.py.
       function titleDirective(title) {
         const clean = (String(title || '').replace(/\s+/g, ' ').trim()).slice(0, 25) || 'VLESS';
-        if (/^[\x20-\x7e]*$/.test(clean)) return '#profile-title: ' + clean;
-        // UTF-8 → «двоичная» строка → base64 (без TextEncoder, работает в любом браузере).
-        const bin = encodeURIComponent(clean).replace(/%([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-        return '#profile-title: base64:' + btoa(bin);
+        return '#profile-title: ' + clean;
       }
 
       function normalizeGistId(val) {
