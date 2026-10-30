@@ -411,8 +411,9 @@
           : (state.folders.find(f => f.filename === folderOrFilename) || { filename: folderOrFilename, name: '' });
         const user = creds.owner || '<username>';
         const gid = creds.gistId || 'b9afa5ebb9d442f8a031e183f90cbaa2';
-        // Имя папки в #фрагменте кодируем, иначе кириллица/пробелы ломают ссылку в клиентах.
-        const nameTag = folder.name ? '#' + encodeURIComponent(folder.name) : '';
+        // Happ берёт название подписки из #фрагмента ссылки. Имя вставляем как есть, БЕЗ кодирования:
+        // с %D0%A5… клиент показывает набор букв вместо «Хаб».
+        const nameTag = folder.name ? '#' + folder.name : '';
         return 'https://gist.githubusercontent.com/' + user + '/' + gid + '/raw/' + folder.filename + nameTag;
       }
 
