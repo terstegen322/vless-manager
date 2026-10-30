@@ -244,6 +244,17 @@
         return (out || 'folder') + '.txt';
       }
 
+      // Название подписки для Happ / Incy: первая строка файла «#profile-title: Название»
+      // (Gist не умеет отдавать HTTP-заголовок). Макс. 25 символов; не-ASCII — как base64 UTF-8.
+      // Должно совпадать с title_directive() в check_keys.py.
+      function titleDirective(title) {
+        const clean = (String(title || '').replace(/\s+/g, ' ').trim()).slice(0, 25) || 'VLESS';
+        if (/^[\x20-\x7e]*$/.test(clean)) return '#profile-title: ' + clean;
+        // UTF-8 → «двоичная» строка → base64 (без TextEncoder, работает в любом браузере).
+        const bin = encodeURIComponent(clean).replace(/%([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+        return '#profile-title: base64:' + btoa(bin);
+      }
+
       function normalizeGistId(val) {
         const s = (val || '').trim().replace(/\/+$/, '');
         if (!s) return 'b9afa5ebb9d442f8a031e183f90cbaa2';
@@ -677,9 +688,11 @@
           // Читаем config.json: retention_days и protected_folders
           const PROTECTED = new Set(['all', 'favourites']);
           let retentionDays = { hub: 7 };
+          let folderTitles = {};
           if (texts['config.json']) {
             try {
               const parsed = JSON.parse(texts['config.json']);
+              if (parsed.titles && typeof parsed.titles === 'object') folderTitles = parsed.titles;
               // Список защищённых (если сервер прислал)
               if (Array.isArray(parsed.protected_folders)) {
                 parsed.protected_folders.forEach(p => PROTECTED.add(p));
@@ -717,7 +730,9 @@
             const stem = fn.slice(0, -4);
             const isProtected = PROTECTED.has(stem);
             const isHub = fn === 'hub.txt';
-            const defName = fn === 'hub.txt' ? 'Хаб' : (fn === 'all.txt' ? 'Все' : (fn === 'favourites.txt' ? 'Любимые' : stem));
+            // Имя папки: из config.json (titles), иначе стандартное / имя файла.
+            const savedTitle = typeof folderTitles[stem] === 'string' ? folderTitles[stem].trim() : '';
+            const defName = savedTitle || (fn === 'hub.txt' ? 'Хаб' : (fn === 'all.txt' ? 'Все' : (fn === 'favourites.txt' ? 'Любимые' : stem)));
             // Для защищённых папок hubDays = null (нет автоочистки)
             const hubDays = isHub ? (retentionDays[stem] ?? retentionDays[fn] ?? 7) : null;
             // У защищённых папок срока нет (null), а не магическое число.
@@ -798,6 +813,7 @@
 
         const PROTECTED_STEMS = new Set(['all', 'favourites']);
         const retentionObj = {};
+        const titlesObj = {};
         const filesPayload = {};
 
         state.folders.forEach(f => {
@@ -809,8 +825,10 @@
               : Math.max(1, parseInt(f.maxSilentDays, 10) || 7);
             retentionObj[stem] = days;
           }
+          titlesObj[stem] = f.name;
           filesPayload[f.filename] = {
-            content: f.keys.length ? f.keys.map(k => k.raw).join('\n') + '\n' : '# empty\n'
+            content: titleDirective(f.name) + '\n' +
+              (f.keys.length ? f.keys.map(k => k.raw).join('\n') + '\n' : '# empty\n')
           };
         });
 
@@ -823,7 +841,8 @@
         filesPayload['config.json'] = {
           content: JSON.stringify({
             protected_folders: ['all', 'favourites'],
-            retention_days: retentionObj
+            retention_days: retentionObj,
+            titles: titlesObj
           }, null, 2) + '\n'
         };
 

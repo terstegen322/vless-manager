@@ -19,6 +19,7 @@ check_keys.py — Фоновый скрипт проверки и очистки
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import socket
@@ -49,6 +50,27 @@ FALLBACK_RETENTION_DAYS = 7
 # Имя Хаба (без .txt): единственная папка, где retention_days считается по возрасту ключа в ней.
 HUB_STEM = "hub"
 EMPTY_FILE_CONTENT = "# empty\n"
+
+# Название подписки в Happ / Incy. Gist не умеет отдавать HTTP-заголовок profile-title, но оба клиента
+# читают его и из ПЕРВОЙ строки тела подписки: «#profile-title: Название» (в список серверов эта
+# строка не попадает). Максимум 25 символов; не-ASCII (кириллица) передаём как «base64:<UTF-8>».
+TITLE_PREFIX = "#profile-title"
+MAX_TITLE_LEN = 25
+DEFAULT_TITLES: dict[str, str] = {"hub": "Хаб", "favourites": "Любимые", "all": "Все"}
+
+
+def title_directive(title: str) -> str:
+    clean = " ".join(title.split())[:MAX_TITLE_LEN] or "VLESS"
+    if clean.isascii():
+        return f"{TITLE_PREFIX}: {clean}"
+    return f"{TITLE_PREFIX}: base64:" + base64.b64encode(clean.encode("utf-8")).decode("ascii")
+
+
+def with_title_header(content: str, title: str) -> str:
+    """Возвращает content с актуальной строкой #profile-title первой (старая строка заменяется)."""
+    lines = [ln for ln in content.splitlines() if not ln.strip().lower().startswith(TITLE_PREFIX)]
+    body = "\n".join(lines).strip("\n")
+    return title_directive(title) + "\n" + (body + "\n" if body else "")
 
 
 @dataclass(frozen=True)
@@ -236,11 +258,17 @@ def main() -> int:
         else:
             file_contents[fname] = meta.get("content") or ""
 
-    # 1. Читаем config.json (retention_days)
+    # 1. Читаем config.json (retention_days, titles)
     retention_days: dict[str, int] = {}
+    titles: dict[str, str] = {}
     if "config.json" in file_contents:
         try:
             cfg = json.loads(file_contents["config.json"])
+            raw_titles = cfg.get("titles") if isinstance(cfg, dict) else None
+            if isinstance(raw_titles, dict):
+                for tk, tv in raw_titles.items():
+                    if isinstance(tv, str) and tv.strip():
+                        titles[tk[:-4] if tk.endswith(".txt") else tk] = tv.strip()
             source = cfg.get("retention_days") or cfg.get("folders") or cfg
             if isinstance(source, dict):
                 for k, v in source.items():
@@ -363,9 +391,14 @@ def main() -> int:
     for fn in txt_files:
         stem = fn[:-4]
 
-        # Защищённые папки — никогда не чистим автоматически
+        folder_title = titles.get(stem) or DEFAULT_TITLES.get(stem) or stem
+
+        # Защищённые папки — никогда не чистим автоматически (только проставляем название подписки)
         if stem in PROTECTED_FOLDERS:
             print(f"  [✓] Папка {fn} защищена (вечный архив) — пропускаем очистку.")
+            titled = with_title_header(file_contents.get(fn, ""), folder_title)
+            if file_contents.get(fn) != titled:
+                patch_payload[fn] = {"content": titled}
             continue
 
         retention = retention_days.get(
@@ -410,6 +443,7 @@ def main() -> int:
                 kept.append(ep.raw_url)
 
         new_content = "\n".join(kept) + "\n" if kept else EMPTY_FILE_CONTENT
+        new_content = with_title_header(new_content, folder_title)
         if file_contents.get(fn) != new_content:
             patch_payload[fn] = {"content": new_content}
 
@@ -445,6 +479,7 @@ def main() -> int:
                 for fn in txt_files
                 if fn[:-4] not in PROTECTED_FOLDERS
             },
+            "titles": {fn[:-4]: DEFAULT_TITLES.get(fn[:-4], fn[:-4]) for fn in txt_files},
         }
         patch_payload["config.json"] = {"content": json.dumps(default_cfg, indent=2) + "\n"}
 
