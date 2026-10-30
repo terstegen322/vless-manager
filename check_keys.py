@@ -6,13 +6,14 @@ check_keys.py — Фоновый скрипт проверки и очистки
   2. Выполняет быстрый TCP-пинг хоста и порта каждого уникального ключа (таймаут 2.5 сек,
      поддержка IPv4, доменов и IPv6 в квадратных скобках).
   3. Обновляет db.json:
-     {"<vless_url>": {"last_success_at": "ISO_DATE", "silent_days": 0}}
+     {"<vless_url>": {"first_seen_at", "last_success_at", "silent_days", "hub_added_at" (только в Хабе), ...}}
   4. Фильтрует каждый *.txt файл: если silent_days >= retention_days для этой папки,
      удаляет ключ из файла.
      ИСКЛЮЧЕНИЯ (PROTECTED_FOLDERS): all.txt и favourites.txt никогда не очищаются
      автоматически — они являются постоянным архивом.
-     hub.txt (Хаб) — карантинная зона: конфиги живут N дней (по умолчанию 7),
-     затем удаляются из хаба, но остаются в all.txt.
+     hub.txt (Хаб) — карантинная зона: ключ живёт в Хабе N дней (по умолчанию 7) с момента
+     попадания в Хаб (hub_added_at), затем удаляется из Хаба, но остаётся в all.txt.
+     В Хабе ключи НЕ удаляются из-за TCP-пинга с GitHub — отбор делает пользователь.
   5. Сохраняет обновленные списки и db.json обратно в Gist одним PATCH-запросом.
 """
 
@@ -43,7 +44,10 @@ PROTECTED_FOLDERS: frozenset[str] = frozenset({"all", "favourites"})
 # Дефолтные пороги retention_days для прочих папок.
 # hub — карантинная зона: конфиги живут 7 дней и удаляются, если не попали в Любимые.
 DEFAULT_RETENTION: dict[str, int] = {"hub": 7}
+# Остальные (пользовательские) папки чистятся по «молчанию» ключа — как раньше.
 FALLBACK_RETENTION_DAYS = 7
+# Имя Хаба (без .txt): единственная папка, где retention_days считается по возрасту ключа в ней.
+HUB_STEM = "hub"
 EMPTY_FILE_CONTENT = "# empty\n"
 
 
@@ -309,6 +313,8 @@ def main() -> int:
     all_seen_urls: set[str] = set()
     new_db: dict[str, Any] = {}
 
+    hub_urls: set[str] = {ep.raw_url for ep in parsed_per_file.get(f"{HUB_STEM}.txt", [])}
+
     for fn, endpoints in parsed_per_file.items():
         for ep in endpoints:
             url = ep.raw_url
@@ -340,11 +346,19 @@ def main() -> int:
                 "latency_ms": latency,
                 "last_checked_at": now_iso,
             }
+            if url in hub_urls:
+                # Момент попадания ИМЕННО В ХАБ (а не первого появления ключа где-либо):
+                # ключ, давно лежащий в «Все» и перенесённый в Хаб, получает полный срок.
+                # У ключей, попавших в Хаб до появления этого поля, срок стартует с этого запуска.
+                new_db[url]["hub_added_at"] = prev.get("hub_added_at") or now_iso
 
-    # 6. Фильтруем каждый *.txt файл по silent_days >= retention_days.
-    #    PROTECTED_FOLDERS (all, favourites) пропускаются — они вечный архив.
+    # 6. Фильтруем *.txt файлы:
+    #    - PROTECTED_FOLDERS (all, favourites) пропускаются — вечный архив;
+    #    - hub.txt — по ВОЗРАСТУ ключа в Хабе (hub_added_at >= retention);
+    #    - остальные папки — по «молчанию» (silent_days >= retention).
     patch_payload: dict[str, Any] = {}
     total_removed = 0
+    hub_kept_urls: set[str] = set()
 
     for fn in txt_files:
         stem = fn[:-4]
@@ -362,22 +376,35 @@ def main() -> int:
         kept: list[str] = []
         removed_in_folder = 0
 
+        is_hub = stem == HUB_STEM
+
         for ep in parsed_per_file[fn]:
             meta = new_db.get(ep.raw_url, {})
-            # Для хаба считаем дни с момента ПЕРВОГО добавления, а не с последнего пинга.
-            # Это позволяет удалять конфиги, которые никогда не отвечали на пинг.
-            first_seen_str = meta.get("first_seen_at")
-            hub_days = 0
-            if first_seen_str:
-                ref = parse_iso(first_seen_str, now)
-                hub_days = int(max(0.0, (now - ref).total_seconds() / 86400.0))
 
-            if hub_days >= retention:
+            if is_hub:
+                # Хаб: считаем дни с момента попадания в Хаб. Из-за TCP-пинга с GitHub ключ
+                # не удаляется — отбор рабочих делает пользователь своим пингом в клиенте.
+                added = parse_iso(meta.get("hub_added_at"), now)
+                age_days = max(0.0, (now - added).total_seconds() / 86400.0)
+                if age_days >= retention:
+                    removed_in_folder += 1
+                    total_removed += 1
+                    print(
+                        f"  [-] Убран из Хаба: {ep.name} ({ep.host}:{ep.port})"
+                        f" — в Хабе {age_days:.1f} дн. >= {retention} дн."
+                    )
+                else:
+                    kept.append(ep.raw_url)
+                    hub_kept_urls.add(ep.raw_url)
+                continue
+
+            s_days = meta.get("silent_days", 0)
+            if s_days >= retention:
                 removed_in_folder += 1
                 total_removed += 1
                 print(
                     f"  [-] Удален из {fn}: {ep.name} ({ep.host}:{ep.port})"
-                    f" — в хабе {hub_days} дн. >= {retention} дн."
+                    f" — молчит {s_days} дн. >= {retention} дн."
                 )
             else:
                 kept.append(ep.raw_url)
@@ -386,7 +413,8 @@ def main() -> int:
         if file_contents.get(fn) != new_content:
             patch_payload[fn] = {"content": new_content}
 
-        print(f"  [i] Папка {fn} (порог {retention} дн. с первого добавления): осталось {len(kept)}, удалено {removed_in_folder}.")
+        basis = "в Хабе" if is_hub else "молчания"
+        print(f"  [i] Папка {fn} (порог {retention} дн. по {basis}): осталось {len(kept)}, удалено {removed_in_folder}.")
 
     # Очищаем db.json от ключей, которых больше нет ни в одной папке
     surviving_urls = set()
@@ -398,6 +426,11 @@ def main() -> int:
                 surviving_urls.add(line)
 
     pruned_db = {url: meta for url, meta in new_db.items() if url in surviving_urls}
+    # Ключ покинул Хаб (срок вышел или перенесён в «Любимые») — забываем время входа:
+    # при возвращении в Хаб срок пойдёт заново.
+    for url, meta in pruned_db.items():
+        if url not in hub_kept_urls:
+            meta.pop("hub_added_at", None)
     new_db_str = json.dumps(pruned_db, ensure_ascii=False, indent=2) + "\n"
 
     if file_contents.get("db.json") != new_db_str:

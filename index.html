@@ -202,7 +202,6 @@
       <!-- Информация для защищённых папок (all, favourites) -->
       <div class="inline-days" id="protectedRow" style="display:none; color: var(--ok);">
         <span>🔒 Эта папка защищена — конфиги никогда не удаляются автоматически.</span>
-        <button type="button" class="btn-danger" id="btnDeleteFolder2" style="margin-left:auto; display:none;">Удалить папку</button>
       </div>
 
       <div>
@@ -344,8 +343,8 @@
         db: {},
         folders: [
           { filename: 'hub.txt',        name: 'Хаб',     maxSilentDays: 7,  hubDays: 7,  isHub: true,  keys: [] },
-          { filename: 'favourites.txt', name: 'Любимые', maxSilentDays: 999, hubDays: null, isHub: false, keys: [] },
-          { filename: 'all.txt',        name: 'Все',     maxSilentDays: 999, hubDays: null, isHub: false, keys: [] },
+          { filename: 'favourites.txt', name: 'Любимые', maxSilentDays: null, hubDays: null, isHub: false, isProtected: true, keys: [] },
+          { filename: 'all.txt',        name: 'Все',     maxSilentDays: null, hubDays: null, isHub: false, isProtected: true, keys: [] },
         ]
       };
       try {
@@ -373,7 +372,6 @@
       const elHubDaysRow = document.getElementById('hubDaysRow');
       const elFolderDaysRow = document.getElementById('folderDaysRow');
       const elProtectedRow = document.getElementById('protectedRow');
-      const elDeleteFolder2 = document.getElementById('btnDeleteFolder2');
       const elRawUrl = document.getElementById('rawUrlDisplay');
       const elKeysCount = document.getElementById('folderKeysCount');
       const elKeyList = document.getElementById('folderKeyList');
@@ -404,7 +402,8 @@
           : (state.folders.find(f => f.filename === folderOrFilename) || { filename: folderOrFilename, name: '' });
         const user = creds.owner || '<username>';
         const gid = creds.gistId || 'b9afa5ebb9d442f8a031e183f90cbaa2';
-        const nameTag = folder.name ? '#' + folder.name : '';
+        // Имя папки в #фрагменте кодируем, иначе кириллица/пробелы ломают ссылку в клиентах.
+        const nameTag = folder.name ? '#' + encodeURIComponent(folder.name) : '';
         return 'https://gist.githubusercontent.com/' + user + '/' + gid + '/raw/' + folder.filename + nameTag;
       }
 
@@ -510,9 +509,10 @@
 
             // Для Хаба — показываем сколько дней осталось
             if (current.isHub || current.filename === 'hub.txt') {
-              const firstSeen = dbStat && dbStat.first_seen_at;
-              if (firstSeen) {
-                const msAgo = Date.now() - new Date(firstSeen).getTime();
+              // Время попадания ИМЕННО В ХАБ (ставит чекер), а не первого появления ключа где-либо.
+              const hubAdded = dbStat && dbStat.hub_added_at;
+              if (hubAdded && !isNaN(Date.parse(hubAdded))) {
+                const msAgo = Date.now() - new Date(hubAdded).getTime();
                 const daysIn = Math.floor(msAgo / 86400000);
                 const limit = current.hubDays || current.maxSilentDays || 7;
                 const daysLeft = Math.max(0, limit - daysIn);
@@ -619,6 +619,26 @@
         });
       }
 
+      // Версия Gist на момент последней загрузки/сохранения (для защиты от перезаписи чужих изменений).
+      let gistVersion = null;
+      // Данные хотя бы раз успешно загружены из Gist в этой сессии. Пока нет — сохранять нельзя:
+      // иначе пустое/устаревшее локальное состояние затёрло бы архив в Gist.
+      let gistLoaded = false;
+
+      // GitHub обрезает в ответе API файлы больше ~1 МБ (truncated: true) — полный текст лежит по raw_url.
+      // Если дочитать не удалось, бросаем ошибку: иначе обрезанный список можно было бы сохранить
+      // поверх полного (особенно опасно для all.txt — вечного архива).
+      async function readGistFileText(name, meta) {
+        if (!meta || typeof meta !== 'object') return '';
+        if (meta.truncated && meta.raw_url) {
+          const r = await fetch(meta.raw_url, { cache: 'no-store' });
+          if (!r.ok) throw new Error('не удалось дочитать большой файл ' + name + ' (HTTP ' + r.status + ')');
+          return await r.text();
+        }
+        if (meta.truncated) throw new Error('файл ' + name + ' обрезан GitHub, а raw_url недоступен');
+        return meta.content || '';
+      }
+
       async function loadFromGist() {
         creds.token = elToken.value.trim();
         creds.gistId = normalizeGistId(elGistId.value);
@@ -644,13 +664,22 @@
           if (data.owner && data.owner.login) creds.owner = data.owner.login;
 
           const files = data.files || {};
+          gistVersion = (data.history && data.history[0] && data.history[0].version) || null;
+
+          // Полные тексты всех нужных файлов (с дочиткой обрезанных).
+          const texts = {};
+          for (const fn of Object.keys(files)) {
+            if (fn === 'config.json' || fn === 'db.json' || fn.toLowerCase().endsWith('.txt')) {
+              texts[fn] = await readGistFileText(fn, files[fn]);
+            }
+          }
 
           // Читаем config.json: retention_days и protected_folders
           const PROTECTED = new Set(['all', 'favourites']);
           let retentionDays = { hub: 7 };
-          if (files['config.json'] && files['config.json'].content) {
+          if (texts['config.json']) {
             try {
-              const parsed = JSON.parse(files['config.json'].content);
+              const parsed = JSON.parse(texts['config.json']);
               // Список защищённых (если сервер прислал)
               if (Array.isArray(parsed.protected_folders)) {
                 parsed.protected_folders.forEach(p => PROTECTED.add(p));
@@ -664,9 +693,9 @@
             } catch (_) {}
           }
 
-          if (files['db.json'] && files['db.json'].content) {
+          if (texts['db.json']) {
             try {
-              state.db = JSON.parse(files['db.json'].content);
+              state.db = JSON.parse(texts['db.json']);
             } catch (_) {}
           }
 
@@ -691,9 +720,9 @@
             const defName = fn === 'hub.txt' ? 'Хаб' : (fn === 'all.txt' ? 'Все' : (fn === 'favourites.txt' ? 'Любимые' : stem));
             // Для защищённых папок hubDays = null (нет автоочистки)
             const hubDays = isHub ? (retentionDays[stem] ?? retentionDays[fn] ?? 7) : null;
-            const rDays = isProtected ? 999 : (retentionDays[stem] ?? retentionDays[fn] ?? 7);
-            const content = (files[fn] && files[fn].content) ? files[fn].content : '';
-            const batch = extractVlessBatch(content);
+            // У защищённых папок срока нет (null), а не магическое число.
+            const rDays = isProtected ? null : (retentionDays[stem] ?? retentionDays[fn] ?? 7);
+            const batch = extractVlessBatch(texts[fn] || '');
             loadedFolders.push({
               filename: fn,
               name: defName,
@@ -711,6 +740,7 @@
           if (!state.activeFolder || state.activeFolder === 'all.txt') {
             state.activeFolder = 'hub.txt';
           }
+          gistLoaded = true;
           persistLocal();
           renderAll();
           setStatus('Данные успешно загружены из Gist', false);
@@ -727,10 +757,45 @@
 
         if (!creds.token || !creds.gistId) {
           setStatus('Сохранено локально (укажите Token для отправки в Gist)', true);
-          return;
+          return false;
+        }
+
+        if (!gistLoaded) {
+          setStatus('Сначала загрузите данные из Gist (кнопка «Загрузить из Gist») — иначе можно затереть архив.', true);
+          return false;
         }
 
         setStatus('Синхронизация с GitHub Gist...', false);
+
+        // Защита от гонки: «Сохранить» перезаписывает файлы целиком. Если с момента загрузки Gist
+        // изменился (например, отработала проверка в Actions), спрашиваем, а не молча затираем.
+        if (gistVersion) {
+          try {
+            const vr = await fetch('https://api.github.com/gists/' + encodeURIComponent(creds.gistId) + '/commits?per_page=1', {
+              headers: {
+                'Authorization': 'Bearer ' + creds.token,
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28'
+              }
+            });
+            if (vr.ok) {
+              const commits = await vr.json();
+              const remoteVersion = commits && commits[0] && commits[0].version;
+              if (remoteVersion && remoteVersion !== gistVersion) {
+                const overwrite = window.confirm(
+                  'Gist изменился с момента загрузки (например, отработала автоматическая проверка).\n\n' +
+                  'ОК — перезаписать Gist вашими данными (изменения проверки будут потеряны).\n' +
+                  'Отмена — ничего не сохранять; потом нажмите «Загрузить из Gist».'
+                );
+                if (!overwrite) {
+                  setStatus('Сохранение отменено: Gist изменился. Нажмите «Загрузить из Gist».', true);
+                  return false;
+                }
+              }
+            }
+          } catch (_) { /* проверка версии не удалась — не блокируем сохранение */ }
+        }
+
         const PROTECTED_STEMS = new Set(['all', 'favourites']);
         const retentionObj = {};
         const filesPayload = {};
@@ -776,12 +841,15 @@
           if (!resp.ok) throw new Error('HTTP ' + resp.status);
           const data = await resp.json();
           if (data.owner && data.owner.login) creds.owner = data.owner.login;
+          gistVersion = (data.history && data.history[0] && data.history[0].version) || gistVersion;
           state.deletedFiles = [];
           persistLocal();
           renderAll();
           setStatus('Gist успешно обновлен (config.json + .txt файлы)', false);
+          return true;
         } catch (err) {
           setStatus('Ошибка PATCH Gist: ' + err.message, true);
+          return false;
         }
       }
 
@@ -809,15 +877,16 @@
           setStatus('В тексте не найдено ссылок vless://', true);
           return;
         }
-        const targetFn = elTargetSelect.value || 'all.txt';
+        const targetFn = elTargetSelect.value || 'hub.txt';
         const target = state.folders.find(f => f.filename === targetFn);
         let added = 0;
+        let skippedKnown = 0;
 
-        const mergeInto = (folder) => {
+        const mergeInto = (folder, keys) => {
           if (!folder) return 0;
           const existing = new Set(folder.keys.map(k => k.id));
           let count = 0;
-          batch.unique.forEach(k => {
+          keys.forEach(k => {
             if (!existing.has(k.id)) {
               existing.add(k.id);
               folder.keys.push(k);
@@ -827,19 +896,38 @@
           return count;
         };
 
-        added += mergeInto(target);
-        if (elAlsoAll.value === 'yes' && targetFn !== 'all.txt') {
-          mergeInto(state.folders.find(f => f.filename === 'all.txt'));
+        // В Хаб попадают только НОВЫЕ ключи: уже известные из «Все»/«Любимых» пропускаем,
+        // иначе повторный пост из канала снова загонял бы их в Хаб на лишний пинг.
+        let incoming = batch.unique;
+        if (targetFn === 'hub.txt') {
+          const known = new Set();
+          ['all.txt', 'favourites.txt'].forEach(fn => {
+            const f = state.folders.find(x => x.filename === fn);
+            if (f) f.keys.forEach(k => known.add(k.id));
+          });
+          incoming = batch.unique.filter(k => !known.has(k.id));
+          skippedKnown = batch.unique.length - incoming.length;
         }
+
+        added += mergeInto(target, incoming);
+        if (elAlsoAll.value === 'yes' && targetFn !== 'all.txt') {
+          // В архив «Все» уходят все ключи из поста (дубликаты отсекаются по id).
+          mergeInto(state.folders.find(f => f.filename === 'all.txt'), batch.unique);
+        }
+
+        const summary = 'В «' + (target ? target.name : targetFn) + '» добавлено новых: ' + added +
+          (skippedKnown ? ' (пропущено уже известных: ' + skippedKnown + ')' : '');
 
         state.activeFolder = targetFn;
         elRawInput.value = '';
         updateLivePreview();
         persistLocal();
         renderAll();
-        await syncToGist();
-        if (!creds.token || !creds.gistId) {
-          setStatus('Добавлено ключей: ' + added + ' (локально)', false);
+        const synced = await syncToGist();
+        if (synced) {
+          setStatus(summary + ' · Gist обновлён', false);
+        } else if (!creds.token || !creds.gistId) {
+          setStatus(summary + ' (локально)', false);
         }
       };
 
