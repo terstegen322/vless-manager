@@ -306,6 +306,9 @@ def main() -> int:
 
             prev = db_json.get(url) if isinstance(db_json.get(url), dict) else {}
             prev_success = prev.get("last_success_at")
+            # Когда ключ впервые увидели: нужен, чтобы ключи, которые НИ РАЗУ не ответили,
+            # тоже начинали копить «молчание» и в итоге удалялись.
+            first_seen = prev.get("first_seen_at") or now_iso
             is_alive, latency = ping_results.get(ep.target, (False, None))
 
             if is_alive:
@@ -313,11 +316,12 @@ def main() -> int:
                 silent_days = 0
             else:
                 last_success = prev_success
-                ref = parse_iso(prev_success, now)
+                ref = parse_iso(prev_success or first_seen, now)
                 diff = max(0.0, (now - ref).total_seconds() / 86400.0)
                 silent_days = int(diff)
 
             new_db[url] = {
+                "first_seen_at": first_seen,
                 "last_success_at": last_success,
                 "silent_days": silent_days,
                 "alive": is_alive,
