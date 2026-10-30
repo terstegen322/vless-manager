@@ -398,10 +398,14 @@
         return state.folders.find(f => f.filename === state.activeFolder) || state.folders[0];
       }
 
-      function getRawSubscriptionUrl(filename) {
+      function getRawSubscriptionUrl(folderOrFilename) {
+        const folder = typeof folderOrFilename === 'object'
+          ? folderOrFilename
+          : (state.folders.find(f => f.filename === folderOrFilename) || { filename: folderOrFilename, name: '' });
         const user = creds.owner || '<username>';
         const gid = creds.gistId || 'b9afa5ebb9d442f8a031e183f90cbaa2';
-        return 'https://gist.githubusercontent.com/' + user + '/' + gid + '/raw/' + filename;
+        const nameTag = folder.name ? '#' + folder.name : '';
+        return 'https://gist.githubusercontent.com/' + user + '/' + gid + '/raw/' + folder.filename + nameTag;
       }
 
       function renderAll() {
@@ -455,7 +459,7 @@
           elDeleteFolder.style.display = 'inline-flex';
         }
 
-        elRawUrl.textContent = getRawSubscriptionUrl(current.filename);
+        elRawUrl.textContent = getRawSubscriptionUrl(current);
         elKeysCount.textContent = 'Ключи в папке «' + current.name + '» (' + current.filename + '): ' + current.keys.length;
 
         elKeyList.innerHTML = '';
@@ -1002,18 +1006,20 @@
       }
 
       document.getElementById('btnCopyRaw').onclick = async () => {
-        const url = getRawSubscriptionUrl(getActiveFolder().filename);
+        const url = getRawSubscriptionUrl(getActiveFolder());
         try {
           await navigator.clipboard.writeText(url);
-          setStatus('RAW-ссылка скопирована в буфер обмена', false);
+          setStatus('RAW-ссылка с названием скопирована в буфер', false);
         } catch (_) {
           setStatus('Не удалось скопировать автоматически', true);
         }
       };
 
       document.getElementById('btnOpenHapp').onclick = () => {
-        const url = getRawSubscriptionUrl(getActiveFolder().filename);
-        window.location.href = 'happ://add/' + url;
+        const url = getRawSubscriptionUrl(getActiveFolder());
+        // Заменяем # на %23, чтобы браузер не отрезал хэш как якорь текущей страницы
+        const safeUrl = url.replace('#', '%23');
+        window.location.href = 'happ://add/' + safeUrl;
       };
 
       renderAll();
