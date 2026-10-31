@@ -3,14 +3,18 @@
 check_keys.py — Фоновый скрипт проверки и очистки VLESS / VMess ключей для GitHub Actions.
 Архитектура системы:
   1. Читает config.json, db.json и все *.txt файлы из GitHub Gist (GIST_ID, GIST_TOKEN).
-  2. Парсит ключи протоколов vless:// и vmess:// (включая Base64 JSON декодирование для vmess).
-  3. Выполняет быстрый TCP-пинг хоста и порта каждого уникального ключа (таймаут 2.5 сек,
-     поддержка IPv4, доменов и IPv6 в квадратных скобках).
-  4. Обновляет db.json:
-     {"<proxy_url>": {"last_success_at": "ISO_DATE", "silent_days": 0}}
-  5. Фильтрует каждый *.txt файл: если silent_days >= retention_days для этой папки,
+  2. Парсит ключи vless:// и vmess:// (включая Base64 JSON декодирование для vmess) и выполняет
+     быстрый TCP-пинг хоста и порта каждого уникального ключа (таймаут 2.5 сек, IPv4/DNS/IPv6).
+  3. Обновляет db.json:
+     {"<proxy_url>": {"first_seen_at", "last_success_at", "silent_days", "hub_added_at" (только в Хабе), ...}}
+  4. Фильтрует каждый *.txt файл: если silent_days >= retention_days для этой папки,
      удаляет ключ из файла.
-  6. Сохраняет обновленные списки и db.json обратно в Gist одним PATCH-запросом.
+     ИСКЛЮЧЕНИЯ (PROTECTED_FOLDERS): all.txt и favourites.txt никогда не очищаются
+     автоматически — они являются постоянным архивом.
+     hub.txt (Хаб) — карантинная зона: ключ живёт в Хабе N дней (по умолчанию 7) с момента
+     попадания в Хаб (hub_added_at), затем удаляется из Хаба, но остаётся в all.txt.
+     В Хабе ключи НЕ удаляются из-за TCP-пинга с GitHub — отбор делает пользователь.
+  5. Сохраняет обновленные списки и db.json обратно в Gist одним PATCH-запросом.
 """
 
 from __future__ import annotations
@@ -33,9 +37,41 @@ import requests
 GITHUB_API_BASE = "https://api.github.com"
 TCP_TIMEOUT_SECONDS = 2.5
 MAX_WORKERS = 32
-DEFAULT_RETENTION = {"all": 1, "favourites": 7}
-FALLBACK_RETENTION_DAYS = 3
+
+# Папки, которые НИКОГДА не очищаются автоматически.
+# all.txt — вечный архив всех конфигов.
+# favourites.txt — отобранные рабочие конфиги.
+PROTECTED_FOLDERS: frozenset[str] = frozenset({"all", "favourites"})
+
+# Дефолтные пороги retention_days для прочих папок.
+# hub — карантинная зона: конфиги живут 7 дней и удаляются, если не попали в Любимые.
+DEFAULT_RETENTION: dict[str, int] = {"hub": 7}
+# Остальные (пользовательские) папки чистятся по «молчанию» ключа — как раньше.
+FALLBACK_RETENTION_DAYS = 7
+# Имя Хаба (без .txt): единственная папка, где retention_days считается по возрасту ключа в ней.
+HUB_STEM = "hub"
 EMPTY_FILE_CONTENT = "# empty\n"
+
+# Название подписки в Happ / Incy. Gist не умеет отдавать HTTP-заголовок profile-title, но оба клиента
+# читают его и из ПЕРВОЙ строки тела подписки: «#profile-title: Название» (в список серверов эта
+# строка не попадает). Максимум 25 символов. Название — обычный UTF-8 текст: Happ допускает plain
+# text, а формат «base64:…» для profile-title в его документации не описан (в Happ при проверке
+# он отображался как набор букв).
+TITLE_PREFIX = "#profile-title"
+MAX_TITLE_LEN = 25
+DEFAULT_TITLES: dict[str, str] = {"hub": "Хаб", "favourites": "Любимые", "all": "Все"}
+
+
+def title_directive(title: str) -> str:
+    clean = " ".join(title.split())[:MAX_TITLE_LEN] or "VLESS"
+    return f"{TITLE_PREFIX}: {clean}"
+
+
+def with_title_header(content: str, title: str) -> str:
+    """Возвращает content с актуальной строкой #profile-title первой (старая строка заменяется)."""
+    lines = [ln for ln in content.splitlines() if not ln.strip().lower().startswith(TITLE_PREFIX)]
+    body = "\n".join(lines).strip("\n")
+    return title_directive(title) + "\n" + (body + "\n" if body else "")
 
 
 @dataclass(frozen=True)
@@ -322,11 +358,17 @@ def main() -> int:
         else:
             file_contents[fname] = meta.get("content") or ""
 
-    # 1. Читаем config.json (retention_days)
+    # 1. Читаем config.json (retention_days, titles)
     retention_days: dict[str, int] = {}
+    titles: dict[str, str] = {}
     if "config.json" in file_contents:
         try:
             cfg = json.loads(file_contents["config.json"])
+            raw_titles = cfg.get("titles") if isinstance(cfg, dict) else None
+            if isinstance(raw_titles, dict):
+                for tk, tv in raw_titles.items():
+                    if isinstance(tv, str) and tv.strip():
+                        titles[tk[:-4] if tk.endswith(".txt") else tk] = tv.strip()
             source = cfg.get("retention_days") or cfg.get("folders") or cfg
             if isinstance(source, dict):
                 for k, v in source.items():
@@ -399,6 +441,8 @@ def main() -> int:
     all_seen_urls: set[str] = set()
     new_db: dict[str, Any] = {}
 
+    hub_urls: set[str] = {ep.raw_url for ep in parsed_per_file.get(f"{HUB_STEM}.txt", [])}
+
     for fn, endpoints in parsed_per_file.items():
         for ep in endpoints:
             url = ep.raw_url
@@ -408,6 +452,9 @@ def main() -> int:
 
             prev = db_json.get(url) if isinstance(db_json.get(url), dict) else {}
             prev_success = prev.get("last_success_at")
+            # Когда ключ впервые увидели: нужен, чтобы ключи, которые НИ РАЗУ не ответили,
+            # тоже начинали копить «молчание» и в итоге удалялись.
+            first_seen = prev.get("first_seen_at") or now_iso
             is_alive, latency = ping_results.get(ep.target, (False, None))
 
             if is_alive:
@@ -415,24 +462,45 @@ def main() -> int:
                 silent_days = 0
             else:
                 last_success = prev_success
-                ref = parse_iso(prev_success, now)
+                ref = parse_iso(prev_success or first_seen, now)
                 diff = max(0.0, (now - ref).total_seconds() / 86400.0)
                 silent_days = int(diff)
 
             new_db[url] = {
+                "first_seen_at": first_seen,
                 "last_success_at": last_success,
                 "silent_days": silent_days,
                 "alive": is_alive,
                 "latency_ms": latency,
                 "last_checked_at": now_iso,
             }
+            if url in hub_urls:
+                # Момент попадания ИМЕННО В ХАБ (а не первого появления ключа где-либо):
+                # ключ, давно лежащий в «Все» и перенесённый в Хаб, получает полный срок.
+                # У ключей, попавших в Хаб до появления этого поля, срок стартует с этого запуска.
+                new_db[url]["hub_added_at"] = prev.get("hub_added_at") or now_iso
 
-    # 6. Фильтруем каждый *.txt файл по silent_days >= retention_days
+    # 6. Фильтруем *.txt файлы:
+    #    - PROTECTED_FOLDERS (all, favourites) пропускаются — вечный архив;
+    #    - hub.txt — по ВОЗРАСТУ ключа в Хабе (hub_added_at >= retention);
+    #    - остальные папки — по «молчанию» (silent_days >= retention).
     patch_payload: dict[str, Any] = {}
     total_removed = 0
+    hub_kept_urls: set[str] = set()
 
     for fn in txt_files:
         stem = fn[:-4]
+
+        folder_title = titles.get(stem) or DEFAULT_TITLES.get(stem) or stem
+
+        # Защищённые папки — никогда не чистим автоматически (только проставляем название подписки)
+        if stem in PROTECTED_FOLDERS:
+            print(f"  [✓] Папка {fn} защищена (вечный архив) — пропускаем очистку.")
+            titled = with_title_header(file_contents.get(fn, ""), folder_title)
+            if file_contents.get(fn) != titled:
+                patch_payload[fn] = {"content": titled}
+            continue
+
         retention = retention_days.get(
             stem,
             DEFAULT_RETENTION.get(stem, FALLBACK_RETENTION_DAYS),
@@ -441,24 +509,46 @@ def main() -> int:
         kept: list[str] = []
         removed_in_folder = 0
 
+        is_hub = stem == HUB_STEM
+
         for ep in parsed_per_file[fn]:
             meta = new_db.get(ep.raw_url, {})
-            s_days = meta.get("silent_days", 0)
 
+            if is_hub:
+                # Хаб: считаем дни с момента попадания в Хаб. Из-за TCP-пинга с GitHub ключ
+                # не удаляется — отбор рабочих делает пользователь своим пингом в клиенте.
+                added = parse_iso(meta.get("hub_added_at"), now)
+                age_days = max(0.0, (now - added).total_seconds() / 86400.0)
+                if age_days >= retention:
+                    removed_in_folder += 1
+                    total_removed += 1
+                    print(
+                        f"  [-] Убран из Хаба: {ep.name} ({ep.host}:{ep.port})"
+                        f" — в Хабе {age_days:.1f} дн. >= {retention} дн."
+                    )
+                else:
+                    kept.append(ep.raw_url)
+                    hub_kept_urls.add(ep.raw_url)
+                continue
+
+            s_days = meta.get("silent_days", 0)
             if s_days >= retention:
                 removed_in_folder += 1
                 total_removed += 1
                 print(
-                    f"  [-] Удален из {fn}: [{ep.protocol.upper()}] {ep.name} ({ep.host}:{ep.port}) — молчит {s_days} дн. >= {retention} дн."
+                    f"  [-] Удален из {fn}: {ep.name} ({ep.host}:{ep.port})"
+                    f" — молчит {s_days} дн. >= {retention} дн."
                 )
             else:
                 kept.append(ep.raw_url)
 
         new_content = "\n".join(kept) + "\n" if kept else EMPTY_FILE_CONTENT
+        new_content = with_title_header(new_content, folder_title)
         if file_contents.get(fn) != new_content:
             patch_payload[fn] = {"content": new_content}
 
-        print(f"  [i] Папка {fn} (порог {retention} дн.): осталось {len(kept)}, удалено {removed_in_folder}.")
+        basis = "в Хабе" if is_hub else "молчания"
+        print(f"  [i] Папка {fn} (порог {retention} дн. по {basis}): осталось {len(kept)}, удалено {removed_in_folder}.")
 
     # Очищаем db.json от ключей, которых больше нет ни в одной папке
     surviving_urls: set[str] = set()
@@ -470,17 +560,26 @@ def main() -> int:
                 surviving_urls.add(ep_surviving.raw_url)
 
     pruned_db = {url: meta for url, meta in new_db.items() if url in surviving_urls}
+    # Ключ покинул Хаб (срок вышел или перенесён в «Любимые») — забываем время входа:
+    # при возвращении в Хаб срок пойдёт заново.
+    for url, meta in pruned_db.items():
+        if url not in hub_kept_urls:
+            meta.pop("hub_added_at", None)
     new_db_str = json.dumps(pruned_db, ensure_ascii=False, indent=2) + "\n"
 
     if file_contents.get("db.json") != new_db_str:
         patch_payload["db.json"] = {"content": new_db_str}
 
     if "config.json" not in file_contents:
+        # В config.json записываем только НЕзащищённые папки (у них есть настраиваемый retention).
         default_cfg = {
+            "protected_folders": sorted(PROTECTED_FOLDERS),
             "retention_days": {
                 fn[:-4]: retention_days.get(fn[:-4], DEFAULT_RETENTION.get(fn[:-4], FALLBACK_RETENTION_DAYS))
                 for fn in txt_files
-            }
+                if fn[:-4] not in PROTECTED_FOLDERS
+            },
+            "titles": {fn[:-4]: DEFAULT_TITLES.get(fn[:-4], fn[:-4]) for fn in txt_files},
         }
         patch_payload["config.json"] = {"content": json.dumps(default_cfg, indent=2) + "\n"}
 

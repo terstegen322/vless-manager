@@ -159,12 +159,16 @@
           <select id="targetFolderSelect"></select>
         </label>
         <label style="justify-content: flex-end;">
-          <span>Дублировать в «Все» (all.txt)</span>
+          <span>Также сохранить в «Все» (all.txt)</span>
           <select id="alsoAddToAll">
-            <option value="yes">Да, также добавить в all.txt</option>
+            <option value="yes">Да — сохранять в all.txt (рекомендуется)</option>
             <option value="no">Нет, только в выбранную папку</option>
           </select>
         </label>
+      </div>
+      <div style="padding: 8px 10px; background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.2); border-radius: 8px; font-size: 0.8rem; color: var(--muted); line-height: 1.5;">
+        💡 <strong style="color:var(--text);">Как работает Хаб:</strong>
+        конфиги попадают в Хаб на N дней → пингуй в incy/Happ → рабочие отмечай ★ Любимыми → остальные удаляются из Хаба автоматически, но остаются в <em>Все</em> навсегда.
       </div>
       <div class="row">
         <button type="button" class="btn-primary" id="btnParseAndSync">Добавить ключи и синхронизировать</button>
@@ -187,11 +191,24 @@
         <button type="button" class="btn-secondary btn-sm" id="btnCreateFolder">+ Создать папку</button>
       </div>
 
-      <div class="inline-days">
+      <!-- Настройки для Хаба -->
+      <div class="inline-days" id="hubDaysRow" style="display:none;">
+        <span>🗂 Конфиги в Хабе хранятся</span>
+        <input type="number" id="hubMaxDays" min="1" max="365" value="7" />
+        <span>дней, затем удаляются из Хаба (но остаются в <em>Все</em>)</span>
+      </div>
+
+      <!-- Настройки для обычных кастомных папок -->
+      <div class="inline-days" id="folderDaysRow" style="display:none;">
         <span>Удалять неактивные ключи через</span>
-        <input type="number" id="folderMaxDays" min="1" max="365" value="1" />
+        <input type="number" id="folderMaxDays" min="1" max="365" value="7" />
         <span>дней (retention_days)</span>
-        <button type="button" class="btn-danger" id="btnDeleteFolder" style="margin-left:auto; display:none;">Удалить папку</button>
+        <button type="button" class="btn-danger" id="btnDeleteFolder" style="margin-left:auto;">Удалить папку</button>
+      </div>
+
+      <!-- Информация для защищённых папок (all, favourites) -->
+      <div class="inline-days" id="protectedRow" style="display:none; color: var(--ok);">
+        <span>🔒 Эта папка защищена — конфиги никогда не удаляются автоматически.</span>
       </div>
 
       <div>
@@ -234,6 +251,15 @@
         return (out || 'folder') + '.txt';
       }
 
+      // Название подписки для Happ / Incy: первая строка файла «#profile-title: Название»
+      // (Gist не умеет отдавать HTTP-заголовок). Макс. 25 символов, обычный UTF-8 текст
+      // (Happ допускает plain text; формат base64 для profile-title у него не описан).
+      // Должно совпадать с title_directive() в check_keys.py.
+      function titleDirective(title) {
+        const clean = (String(title || '').replace(/\s+/g, ' ').trim()).slice(0, 25) || 'VLESS';
+        return '#profile-title: ' + clean;
+      }
+
       function normalizeGistId(val) {
         const s = (val || '').trim().replace(/\/+$/, '');
         if (!s) return 'b9afa5ebb9d442f8a031e183f90cbaa2';
@@ -243,14 +269,6 @@
 
       function safeDecode(str) {
         try { return decodeURIComponent(str.replace(/\+/g, '%20')); } catch (_) { return str; }
-      }
-
-      function escapeHtml(str) {
-        return String(str || '')
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;');
       }
 
       function decodeBase64Utf8(b64Input) {
@@ -341,7 +359,7 @@
         } catch (_) {
           return null;
         }
-        if (!data || typeof data !== 'object') return null;
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
 
         const rawAdd = String(data.add || '').trim();
         const host = rawAdd.replace(/^\[|\]$/g, '').trim().toLowerCase();
@@ -406,13 +424,14 @@
       } catch (_) {}
 
       let state = {
-        activeFolder: 'all.txt',
+        activeFolder: 'hub.txt',
         deletedFiles: [],
         sortByPing: false,
         db: {},
         folders: [
-          { filename: 'all.txt', name: 'Все', maxSilentDays: 1, keys: [] },
-          { filename: 'favourites.txt', name: 'Любимые', maxSilentDays: 7, keys: [] }
+          { filename: 'hub.txt',        name: 'Хаб',     maxSilentDays: 7,  hubDays: 7,  isHub: true,  keys: [] },
+          { filename: 'favourites.txt', name: 'Любимые', maxSilentDays: null, hubDays: null, isHub: false, isProtected: true, keys: [] },
+          { filename: 'all.txt',        name: 'Все',     maxSilentDays: null, hubDays: null, isHub: false, isProtected: true, keys: [] },
         ]
       };
       try {
@@ -435,10 +454,17 @@
       const elFolderTabs = document.getElementById('folderTabs');
       const elNewFolder = document.getElementById('newFolderName');
       const elMaxDays = document.getElementById('folderMaxDays');
+      const elHubDays = document.getElementById('hubMaxDays');
       const elDeleteFolder = document.getElementById('btnDeleteFolder');
+      const elHubDaysRow = document.getElementById('hubDaysRow');
+      const elFolderDaysRow = document.getElementById('folderDaysRow');
+      const elProtectedRow = document.getElementById('protectedRow');
       const elRawUrl = document.getElementById('rawUrlDisplay');
       const elKeysCount = document.getElementById('folderKeysCount');
       const elKeyList = document.getElementById('folderKeyList');
+
+      // Множество защищённых имён файлов
+      const PROTECTED_FILENAMES = new Set(['all.txt', 'favourites.txt']);
 
       elToken.value = creds.token || '';
       elGistId.value = creds.gistId || 'b9afa5ebb9d442f8a031e183f90cbaa2';
@@ -457,26 +483,40 @@
         return state.folders.find(f => f.filename === state.activeFolder) || state.folders[0];
       }
 
-      function getRawSubscriptionUrl(filename) {
+      function getRawSubscriptionUrl(folderOrFilename) {
+        const folder = typeof folderOrFilename === 'object'
+          ? folderOrFilename
+          : (state.folders.find(f => f.filename === folderOrFilename) || { filename: folderOrFilename, name: '' });
         const user = creds.owner || '<username>';
         const gid = creds.gistId || 'b9afa5ebb9d442f8a031e183f90cbaa2';
-        return 'https://gist.githubusercontent.com/' + user + '/' + gid + '/raw/' + filename;
+        // Happ берёт название подписки из #фрагмента ссылки. Имя вставляем как есть, БЕЗ кодирования:
+        // с %D0%A5… клиент показывает набор букв вместо «Хаб».
+        const nameTag = folder.name ? '#' + folder.name : '';
+        return 'https://gist.githubusercontent.com/' + user + '/' + gid + '/raw/' + folder.filename + nameTag;
       }
 
       function renderAll() {
         const current = getActiveFolder();
         state.activeFolder = current.filename;
 
-        const prevTarget = elTargetSelect.value || current.filename;
+        // Таргет импорта — по умолчанию Хаб
+        const prevTarget = elTargetSelect.value || 'hub.txt';
         elTargetSelect.innerHTML = '';
         state.folders.forEach(f => {
           const opt = document.createElement('option');
           opt.value = f.filename;
-          opt.textContent = f.name + ' (' + f.filename + ' · ' + f.maxSilentDays + ' дн.)';
+          const label = f.isHub
+            ? f.name + ' (карантин · ' + (f.hubDays || 7) + ' дн.)'
+            : f.isProtected
+              ? f.name + ' (архив, ' + f.keys.length + ')'
+              : f.name + ' (' + f.filename + ')';
+          opt.textContent = label;
           elTargetSelect.appendChild(opt);
         });
         if (state.folders.some(f => f.filename === prevTarget)) {
           elTargetSelect.value = prevTarget;
+        } else {
+          elTargetSelect.value = 'hub.txt';
         }
 
         elFolderTabs.innerHTML = '';
@@ -484,16 +524,29 @@
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'tab' + (f.filename === current.filename ? ' active' : '');
-          btn.textContent = f.name + ' · ' + f.keys.length;
+          const icon = f.isHub ? '🗂 ' : (f.filename === 'favourites.txt' ? '★ ' : (f.filename === 'all.txt' ? '📦 ' : ''));
+          btn.textContent = icon + f.name + ' · ' + f.keys.length;
           btn.onclick = () => { state.activeFolder = f.filename; persistLocal(); renderAll(); };
           elFolderTabs.appendChild(btn);
         });
 
-        elMaxDays.value = String(current.maxSilentDays);
-        const isProtected = current.filename === 'all.txt' || current.filename === 'favourites.txt';
-        elDeleteFolder.style.display = isProtected ? 'none' : 'inline-flex';
+        // Показываем нужный блок настроек
+        const isHub = current.isHub || current.filename === 'hub.txt';
+        const isProtected = current.isProtected || PROTECTED_FILENAMES.has(current.filename);
+        const isCustom = !isHub && !isProtected;
 
-        elRawUrl.textContent = getRawSubscriptionUrl(current.filename);
+        elHubDaysRow.style.display = isHub ? 'flex' : 'none';
+        elFolderDaysRow.style.display = isCustom ? 'flex' : 'none';
+        elProtectedRow.style.display = isProtected ? 'flex' : 'none';
+
+        if (isHub) {
+          elHubDays.value = String(current.hubDays ?? current.maxSilentDays ?? 7);
+        } else if (isCustom) {
+          elMaxDays.value = String(current.maxSilentDays);
+          elDeleteFolder.style.display = 'inline-flex';
+        }
+
+        elRawUrl.textContent = getRawSubscriptionUrl(current);
         elKeysCount.textContent = 'Ключи в папке «' + current.name + '» (' + current.filename + '): ' + current.keys.length;
 
         elKeyList.innerHTML = '';
@@ -533,19 +586,36 @@
             let badgeHtml = '';
             if (dbStat) {
               if (isAlive) {
-                const latency = dbStat.latency_ms != null ? dbStat.latency_ms + ' ms' : 'Онлайн';
+                const latency = dbStat.latency_ms != null ? (Number(dbStat.latency_ms) || 0) + ' ms' : 'Онлайн';
                 badgeHtml = '<span style="display:inline-block; margin-left:8px; padding:2px 7px; border-radius:6px; font-size:11px; font-weight:600; background:rgba(16,185,129,0.15); color:#34d399; border:1px solid rgba(16,185,129,0.3);">🟢 ' + latency + '</span>';
               } else {
-                badgeHtml = '<span style="display:inline-block; margin-left:8px; padding:2px 7px; border-radius:6px; font-size:11px; font-weight:600; background:rgba(244,63,94,0.15); color:#fb7185; border:1px solid rgba(244,63,94,0.3);">🔴 Недоступен (' + dbStat.silent_days + ' дн.)</span>';
+                badgeHtml = '<span style="display:inline-block; margin-left:8px; padding:2px 7px; border-radius:6px; font-size:11px; font-weight:600; background:rgba(244,63,94,0.15); color:#fb7185; border:1px solid rgba(244,63,94,0.3);">🔴 Недоступен (' + (Number(dbStat.silent_days) || 0) + ' дн.)</span>';
               }
             } else {
               badgeHtml = '<span style="display:inline-block; margin-left:8px; padding:2px 7px; border-radius:6px; font-size:11px; color:#64748b; background:rgba(30,41,59,0.6); border:1px solid rgba(51,65,85,0.6);">⚪ Не проверялся</span>';
             }
 
-            const proto = (k.protocol || (String(k.raw || '').toLowerCase().startsWith('vmess://') ? 'vmess' : 'vless'));
-            const protoBadge = '<span class="proto-tag proto-' + proto + '">' + proto.toUpperCase() + '</span>';
+            // Для Хаба — показываем сколько дней осталось
+            if (current.isHub || current.filename === 'hub.txt') {
+              // Время попадания ИМЕННО В ХАБ (ставит чекер), а не первого появления ключа где-либо.
+              const hubAdded = dbStat && dbStat.hub_added_at;
+              if (hubAdded && !isNaN(Date.parse(hubAdded))) {
+                const msAgo = Date.now() - new Date(hubAdded).getTime();
+                const daysIn = Math.floor(msAgo / 86400000);
+                const limit = current.hubDays || current.maxSilentDays || 7;
+                const daysLeft = Math.max(0, limit - daysIn);
+                const color = daysLeft <= 1 ? '#fb7185' : (daysLeft <= 2 ? '#fbbf24' : '#94a3b8');
+                badgeHtml += '<span style="display:inline-block; margin-left:6px; padding:2px 7px; border-radius:6px; font-size:11px; color:' + color + '; background:rgba(30,41,59,0.6); border:1px solid rgba(51,65,85,0.6);">⏳ ' + daysLeft + ' дн.</span>';
+              }
+            }
 
-            title.innerHTML = protoBadge + escapeHtml(k.name) + badgeHtml;
+            // k.name приходит из #fragment / ps чужой ссылки — только как текст, не как HTML.
+            // protoBadge и badgeHtml собираются из констант и чисел (Number(...) выше), поэтому безопасны.
+            const proto = (k.protocol === 'vmess' || String(k.raw || '').toLowerCase().startsWith('vmess://')) ? 'vmess' : 'vless';
+            const protoBadge = '<span class="proto-tag proto-' + proto + '">' + proto.toUpperCase() + '</span>';
+            title.textContent = k.name;
+            title.insertAdjacentHTML('afterbegin', protoBadge);
+            title.insertAdjacentHTML('beforeend', badgeHtml);
             const sub = document.createElement('div');
             sub.className = 'key-sub';
             const fmtHost = k.host && k.host.includes(':') ? '[' + k.host + ']' : k.host;
@@ -555,11 +625,15 @@
 
             const actions = document.createElement('div');
             actions.className = 'row';
+
+            // Кнопка «★ В Любимые» — во всех папках кроме самих Любимых
             if (current.filename !== 'favourites.txt') {
               const favBtn = document.createElement('button');
               favBtn.type = 'button';
               favBtn.className = 'btn-secondary btn-sm';
-              favBtn.textContent = 'В Любимые';
+              const alreadyFav = (state.folders.find(f => f.filename === 'favourites.txt')?.keys || []).some(x => x.id === k.id);
+              favBtn.textContent = alreadyFav ? '★ В Любимых' : '★ В Любимые';
+              favBtn.disabled = alreadyFav;
               favBtn.onclick = () => {
                 const fav = state.folders.find(f => f.filename === 'favourites.txt');
                 if (fav && !fav.keys.some(x => x.id === k.id)) {
@@ -570,6 +644,29 @@
                 }
               };
               actions.appendChild(favBtn);
+            }
+
+            // Кнопка «В Хаб» — только из папки «Все» (all.txt)
+            if (current.filename === 'all.txt') {
+              const hubFolder = state.folders.find(f => f.filename === 'hub.txt');
+              if (hubFolder) {
+                const inHub = hubFolder.keys.some(x => x.id === k.id);
+                if (!inHub) {
+                  const hubBtn = document.createElement('button');
+                  hubBtn.type = 'button';
+                  hubBtn.className = 'btn-secondary btn-sm';
+                  hubBtn.textContent = '🗂 В Хаб';
+                  hubBtn.onclick = () => {
+                    if (!hubFolder.keys.some(x => x.id === k.id)) {
+                      hubFolder.keys.unshift(k);
+                      persistLocal();
+                      renderAll();
+                      setStatus('Ключ добавлен в Хаб', false);
+                    }
+                  };
+                  actions.appendChild(hubBtn);
+                }
+              }
             }
 
             const delBtn = document.createElement('button');
@@ -610,11 +707,33 @@
           const proto = k.protocol === 'vmess' ? 'vmess' : 'vless';
           const protoBadge = '<span class="proto-tag proto-' + proto + '">' + proto.toUpperCase() + '</span>';
           item.innerHTML = '<div class="key-info"><div class="key-name"></div><div class="key-sub"></div></div>';
-          item.querySelector('.key-name').innerHTML = protoBadge + escapeHtml(k.name);
+          const nameEl = item.querySelector('.key-name');
+          nameEl.textContent = k.name;
+          nameEl.insertAdjacentHTML('afterbegin', protoBadge);
           const fmtHost = k.host && k.host.includes(':') ? '[' + k.host + ']' : k.host;
           item.querySelector('.key-sub').textContent = fmtHost + ':' + k.port + (k.sni ? ' · ' + k.sni : '');
           elParsedPreview.appendChild(item);
         });
+      }
+
+      // Версия Gist на момент последней загрузки/сохранения (для защиты от перезаписи чужих изменений).
+      let gistVersion = null;
+      // Данные хотя бы раз успешно загружены из Gist в этой сессии. Пока нет — сохранять нельзя:
+      // иначе пустое/устаревшее локальное состояние затёрло бы архив в Gist.
+      let gistLoaded = false;
+
+      // GitHub обрезает в ответе API файлы больше ~1 МБ (truncated: true) — полный текст лежит по raw_url.
+      // Если дочитать не удалось, бросаем ошибку: иначе обрезанный список можно было бы сохранить
+      // поверх полного (особенно опасно для all.txt — вечного архива).
+      async function readGistFileText(name, meta) {
+        if (!meta || typeof meta !== 'object') return '';
+        if (meta.truncated && meta.raw_url) {
+          const r = await fetch(meta.raw_url, { cache: 'no-store' });
+          if (!r.ok) throw new Error('не удалось дочитать большой файл ' + name + ' (HTTP ' + r.status + ')');
+          return await r.text();
+        }
+        if (meta.truncated) throw new Error('файл ' + name + ' обрезан GitHub, а raw_url недоступен');
+        return meta.content || '';
       }
 
       async function loadFromGist() {
@@ -642,46 +761,87 @@
           if (data.owner && data.owner.login) creds.owner = data.owner.login;
 
           const files = data.files || {};
-          let retentionDays = { all: 1, favourites: 7 };
-          if (files['config.json'] && files['config.json'].content) {
+          gistVersion = (data.history && data.history[0] && data.history[0].version) || null;
+
+          // Полные тексты всех нужных файлов (с дочиткой обрезанных).
+          const texts = {};
+          for (const fn of Object.keys(files)) {
+            if (fn === 'config.json' || fn === 'db.json' || fn.toLowerCase().endsWith('.txt')) {
+              texts[fn] = await readGistFileText(fn, files[fn]);
+            }
+          }
+
+          // Читаем config.json: retention_days и protected_folders
+          const PROTECTED = new Set(['all', 'favourites']);
+          let retentionDays = { hub: 7 };
+          let folderTitles = {};
+          if (texts['config.json']) {
             try {
-              const parsed = JSON.parse(files['config.json'].content);
+              const parsed = JSON.parse(texts['config.json']);
+              if (parsed.titles && typeof parsed.titles === 'object') folderTitles = parsed.titles;
+              // Список защищённых (если сервер прислал)
+              if (Array.isArray(parsed.protected_folders)) {
+                parsed.protected_folders.forEach(p => PROTECTED.add(p));
+              }
               const src = parsed.retention_days || parsed.folders || parsed || {};
               Object.keys(src).forEach(k => {
-                const val = typeof src[k] === 'number' ? src[k] : (src[k]?.max_silent_days || 3);
+                const val = typeof src[k] === 'number' ? src[k] : (src[k]?.max_silent_days || 7);
                 retentionDays[k] = val;
                 retentionDays[k.replace(/\.txt$/i, '')] = val;
               });
             } catch (_) {}
           }
 
-          if (files['db.json'] && files['db.json'].content) {
+          if (texts['db.json']) {
             try {
-              state.db = JSON.parse(files['db.json'].content);
+              state.db = JSON.parse(texts['db.json']);
             } catch (_) {}
           }
 
-          const names = new Set(['all.txt', 'favourites.txt']);
+          const names = new Set(['hub.txt', 'favourites.txt', 'all.txt']);
           Object.keys(files).forEach(fn => { if (fn.endsWith('.txt')) names.add(fn); });
 
+          // Порядок: сначала Хаб, потом Любимые, потом Все, остальные по алфавиту
+          const ORDER = ['hub.txt', 'favourites.txt', 'all.txt'];
+          const sorted = [...names].sort((a, b) => {
+            const ia = ORDER.indexOf(a), ib = ORDER.indexOf(b);
+            if (ia !== -1 && ib !== -1) return ia - ib;
+            if (ia !== -1) return -1;
+            if (ib !== -1) return 1;
+            return a.localeCompare(b);
+          });
+
           const loadedFolders = [];
-          for (const fn of names) {
+          for (const fn of sorted) {
             const stem = fn.slice(0, -4);
-            const defDays = fn === 'all.txt' ? 1 : (fn === 'favourites.txt' ? 7 : 3);
-            const rDays = retentionDays[fn] ?? retentionDays[stem] ?? defDays;
-            const defName = fn === 'all.txt' ? 'Все' : (fn === 'favourites.txt' ? 'Любимые' : stem);
-            const content = (files[fn] && files[fn].content) ? files[fn].content : '';
-            const batch = extractVlessBatch(content);
+            const isProtected = PROTECTED.has(stem);
+            const isHub = fn === 'hub.txt';
+            // Имя папки: из config.json (titles), иначе стандартное / имя файла.
+            const savedTitle = typeof folderTitles[stem] === 'string' ? folderTitles[stem].trim() : '';
+            const defName = savedTitle || (fn === 'hub.txt' ? 'Хаб' : (fn === 'all.txt' ? 'Все' : (fn === 'favourites.txt' ? 'Любимые' : stem)));
+            // Для защищённых папок hubDays = null (нет автоочистки)
+            const hubDays = isHub ? (retentionDays[stem] ?? retentionDays[fn] ?? 7) : null;
+            // У защищённых папок срока нет (null), а не магическое число.
+            const rDays = isProtected ? null : (retentionDays[stem] ?? retentionDays[fn] ?? 7);
+            const batch = extractVlessBatch(texts[fn] || '');
             loadedFolders.push({
               filename: fn,
               name: defName,
               maxSilentDays: rDays,
+              hubDays,
+              isHub,
+              isProtected,
               keys: batch.unique
             });
           }
 
           state.folders = loadedFolders;
           state.deletedFiles = [];
+          // После загрузки переключаемся на Хаб (если ещё не был выбран другой)
+          if (!state.activeFolder || state.activeFolder === 'all.txt') {
+            state.activeFolder = 'hub.txt';
+          }
+          gistLoaded = true;
           persistLocal();
           renderAll();
           setStatus('Данные успешно загружены из Gist', false);
@@ -698,18 +858,63 @@
 
         if (!creds.token || !creds.gistId) {
           setStatus('Сохранено локально (укажите Token для отправки в Gist)', true);
-          return;
+          return false;
+        }
+
+        if (!gistLoaded) {
+          setStatus('Сначала загрузите данные из Gist (кнопка «Загрузить из Gist») — иначе можно затереть архив.', true);
+          return false;
         }
 
         setStatus('Синхронизация с GitHub Gist...', false);
+
+        // Защита от гонки: «Сохранить» перезаписывает файлы целиком. Если с момента загрузки Gist
+        // изменился (например, отработала проверка в Actions), спрашиваем, а не молча затираем.
+        if (gistVersion) {
+          try {
+            const vr = await fetch('https://api.github.com/gists/' + encodeURIComponent(creds.gistId) + '/commits?per_page=1', {
+              headers: {
+                'Authorization': 'Bearer ' + creds.token,
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28'
+              }
+            });
+            if (vr.ok) {
+              const commits = await vr.json();
+              const remoteVersion = commits && commits[0] && commits[0].version;
+              if (remoteVersion && remoteVersion !== gistVersion) {
+                const overwrite = window.confirm(
+                  'Gist изменился с момента загрузки (например, отработала автоматическая проверка).\n\n' +
+                  'ОК — перезаписать Gist вашими данными (изменения проверки будут потеряны).\n' +
+                  'Отмена — ничего не сохранять; потом нажмите «Загрузить из Gist».'
+                );
+                if (!overwrite) {
+                  setStatus('Сохранение отменено: Gist изменился. Нажмите «Загрузить из Gist».', true);
+                  return false;
+                }
+              }
+            }
+          } catch (_) { /* проверка версии не удалась — не блокируем сохранение */ }
+        }
+
+        const PROTECTED_STEMS = new Set(['all', 'favourites']);
         const retentionObj = {};
+        const titlesObj = {};
         const filesPayload = {};
 
         state.folders.forEach(f => {
           const stem = f.filename.replace(/\.txt$/i, '');
-          retentionObj[stem] = Math.max(1, parseInt(f.maxSilentDays, 10) || 1);
+          // В config.json пишем retention только для НЕзащищённых папок (Хаб и кастомные)
+          if (!PROTECTED_STEMS.has(stem)) {
+            const days = f.isHub
+              ? Math.max(1, parseInt(f.hubDays, 10) || 7)
+              : Math.max(1, parseInt(f.maxSilentDays, 10) || 7);
+            retentionObj[stem] = days;
+          }
+          titlesObj[stem] = f.name;
           filesPayload[f.filename] = {
-            content: f.keys.length ? f.keys.map(k => k.raw).join('\n') + '\n' : '# empty\n'
+            content: titleDirective(f.name) + '\n' +
+              (f.keys.length ? f.keys.map(k => k.raw).join('\n') + '\n' : '# empty\n')
           };
         });
 
@@ -720,7 +925,11 @@
         });
 
         filesPayload['config.json'] = {
-          content: JSON.stringify({ retention_days: retentionObj }, null, 2) + '\n'
+          content: JSON.stringify({
+            protected_folders: ['all', 'favourites'],
+            retention_days: retentionObj,
+            titles: titlesObj
+          }, null, 2) + '\n'
         };
 
         try {
@@ -737,12 +946,15 @@
           if (!resp.ok) throw new Error('HTTP ' + resp.status);
           const data = await resp.json();
           if (data.owner && data.owner.login) creds.owner = data.owner.login;
+          gistVersion = (data.history && data.history[0] && data.history[0].version) || gistVersion;
           state.deletedFiles = [];
           persistLocal();
           renderAll();
           setStatus('Gist успешно обновлен (config.json + .txt файлы)', false);
+          return true;
         } catch (err) {
           setStatus('Ошибка PATCH Gist: ' + err.message, true);
+          return false;
         }
       }
 
@@ -770,15 +982,16 @@
           setStatus('В тексте не найдено ссылок vless:// или vmess://', true);
           return;
         }
-        const targetFn = elTargetSelect.value || 'all.txt';
+        const targetFn = elTargetSelect.value || 'hub.txt';
         const target = state.folders.find(f => f.filename === targetFn);
         let added = 0;
+        let skippedKnown = 0;
 
-        const mergeInto = (folder) => {
+        const mergeInto = (folder, keys) => {
           if (!folder) return 0;
           const existing = new Set(folder.keys.map(k => k.id));
           let count = 0;
-          batch.unique.forEach(k => {
+          keys.forEach(k => {
             if (!existing.has(k.id)) {
               existing.add(k.id);
               folder.keys.push(k);
@@ -788,19 +1001,38 @@
           return count;
         };
 
-        added += mergeInto(target);
-        if (elAlsoAll.value === 'yes' && targetFn !== 'all.txt') {
-          mergeInto(state.folders.find(f => f.filename === 'all.txt'));
+        // В Хаб попадают только НОВЫЕ ключи: уже известные из «Все»/«Любимых» пропускаем,
+        // иначе повторный пост из канала снова загонял бы их в Хаб на лишний пинг.
+        let incoming = batch.unique;
+        if (targetFn === 'hub.txt') {
+          const known = new Set();
+          ['all.txt', 'favourites.txt'].forEach(fn => {
+            const f = state.folders.find(x => x.filename === fn);
+            if (f) f.keys.forEach(k => known.add(k.id));
+          });
+          incoming = batch.unique.filter(k => !known.has(k.id));
+          skippedKnown = batch.unique.length - incoming.length;
         }
+
+        added += mergeInto(target, incoming);
+        if (elAlsoAll.value === 'yes' && targetFn !== 'all.txt') {
+          // В архив «Все» уходят все ключи из поста (дубликаты отсекаются по id).
+          mergeInto(state.folders.find(f => f.filename === 'all.txt'), batch.unique);
+        }
+
+        const summary = 'В «' + (target ? target.name : targetFn) + '» добавлено новых: ' + added +
+          (skippedKnown ? ' (пропущено уже известных: ' + skippedKnown + ')' : '');
 
         state.activeFolder = targetFn;
         elRawInput.value = '';
         updateLivePreview();
         persistLocal();
         renderAll();
-        await syncToGist();
-        if (!creds.token || !creds.gistId) {
-          setStatus('Добавлено ключей: ' + added + ' (локально)', false);
+        const synced = await syncToGist();
+        if (synced) {
+          setStatus(summary + ' · Gist обновлён', false);
+        } else if (!creds.token || !creds.gistId) {
+          setStatus(summary + ' (локально)', false);
         }
       };
 
@@ -815,7 +1047,10 @@
         state.folders.push({
           filename,
           name: title,
-          maxSilentDays: 3,
+          maxSilentDays: 7,
+          hubDays: null,
+          isHub: false,
+          isProtected: false,
           keys: []
         });
         state.activeFolder = filename;
@@ -825,8 +1060,22 @@
         setStatus('Создана папка «' + title + '» (' + filename + ')', false);
       };
 
+      // Изменение hubDays для Хаба
+      elHubDays.onchange = () => {
+        const current = getActiveFolder();
+        if (!current.isHub && current.filename !== 'hub.txt') return;
+        const val = Math.max(1, parseInt(elHubDays.value, 10) || 7);
+        current.hubDays = val;
+        current.maxSilentDays = val;
+        elHubDays.value = String(val);
+        persistLocal();
+        setStatus('Срок хранения в Хабе: ' + val + ' дн.', false);
+      };
+
+      // Изменение retention для обычных кастомных папок
       elMaxDays.onchange = () => {
         const current = getActiveFolder();
+        if (current.isHub || current.filename === 'hub.txt') return;
         current.maxSilentDays = Math.max(1, parseInt(elMaxDays.value, 10) || 1);
         elMaxDays.value = String(current.maxSilentDays);
         persistLocal();
@@ -835,11 +1084,11 @@
 
       elDeleteFolder.onclick = () => {
         const current = getActiveFolder();
-        if (current.filename === 'all.txt' || current.filename === 'favourites.txt') return;
+        if (PROTECTED_FILENAMES.has(current.filename) || current.filename === 'hub.txt') return;
         state.deletedFiles = state.deletedFiles || [];
         state.deletedFiles.push(current.filename);
         state.folders = state.folders.filter(f => f.filename !== current.filename);
-        state.activeFolder = 'all.txt';
+        state.activeFolder = 'hub.txt';
         persistLocal();
         renderAll();
         setStatus('Папка ' + current.filename + ' помечена к удалению', false);
@@ -869,11 +1118,27 @@
 
           const repoOwner = creds.owner || 'terstegen322';
           const repoName = 'vless-manager';
+          const ghHeaders = {
+            'Authorization': 'Bearer ' + creds.token,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
+          };
+          const runsUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/workflows/check.yml/runs?event=workflow_dispatch&per_page=5`;
           btnCheckPing.disabled = true;
           btnCheckPing.textContent = '⏳ Запуск...';
           setStatus('Отправка запроса на проверку пинга в GitHub Actions...', false);
 
           try {
+            // Запоминаем самый большой id запуска ДО dispatch — новый запуск будет иметь id больше.
+            let lastKnownRunId = 0;
+            try {
+              const before = await fetch(runsUrl, { headers: ghHeaders });
+              if (before.ok) {
+                const bd = await before.json();
+                (bd.workflow_runs || []).forEach(r => { if (r.id > lastKnownRunId) lastKnownRunId = r.id; });
+              }
+            } catch (_) {}
+
             const dispatchResp = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/actions/workflows/check.yml/dispatches`, {
               method: 'POST',
               headers: {
@@ -895,20 +1160,18 @@
 
             await new Promise(r => setTimeout(r, 3000));
 
-            for (let attempt = 1; attempt <= 12; attempt++) {
+            // Ждём именно НОВЫЙ запуск (id больше известного до dispatch), до ~5 минут.
+            const MAX_ATTEMPTS = 100;
+            let finishedRun = null;
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
               btnCheckPing.textContent = `⏳ Пинг (${attempt * 3}с)...`;
               try {
-                const runsResp = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs?per_page=1`, {
-                  headers: {
-                    'Authorization': 'Bearer ' + creds.token,
-                    'Accept': 'application/vnd.github+json',
-                    'X-GitHub-Api-Version': '2022-11-28'
-                  }
-                });
+                const runsResp = await fetch(runsUrl, { headers: ghHeaders });
                 if (runsResp.ok) {
                   const runsData = await runsResp.json();
-                  const latestRun = runsData.workflow_runs && runsData.workflow_runs[0];
-                  if (latestRun && latestRun.status === 'completed') {
+                  const newRun = (runsData.workflow_runs || []).find(r => r.id > lastKnownRunId);
+                  if (newRun && newRun.status === 'completed') {
+                    finishedRun = newRun;
                     break;
                   }
                 }
@@ -920,7 +1183,13 @@
             await loadFromGist();
             btnCheckPing.textContent = '⚡ Проверить пинг';
             btnCheckPing.disabled = false;
-            setStatus('Проверка пинга завершена! Данные обновлены.', false);
+            if (!finishedRun) {
+              setStatus('Проверка ещё идёт — данные могут быть старыми. Нажмите «Загрузить из Gist» позже.', true);
+            } else if (finishedRun.conclusion !== 'success') {
+              setStatus('Проверка завершилась с ошибкой (' + finishedRun.conclusion + '). Смотрите лог в GitHub Actions.', true);
+            } else {
+              setStatus('Проверка пинга завершена! Данные обновлены.', false);
+            }
           } catch (err) {
             btnCheckPing.disabled = false;
             btnCheckPing.textContent = '⚡ Проверить пинг';
@@ -930,18 +1199,20 @@
       }
 
       document.getElementById('btnCopyRaw').onclick = async () => {
-        const url = getRawSubscriptionUrl(getActiveFolder().filename);
+        const url = getRawSubscriptionUrl(getActiveFolder());
         try {
           await navigator.clipboard.writeText(url);
-          setStatus('RAW-ссылка скопирована в буфер обмена', false);
+          setStatus('RAW-ссылка с названием скопирована в буфер', false);
         } catch (_) {
           setStatus('Не удалось скопировать автоматически', true);
         }
       };
 
       document.getElementById('btnOpenHapp').onclick = () => {
-        const url = getRawSubscriptionUrl(getActiveFolder().filename);
-        window.location.href = 'happ://add/' + url;
+        const url = getRawSubscriptionUrl(getActiveFolder());
+        // Заменяем # на %23, чтобы браузер не отрезал хэш как якорь текущей страницы
+        const safeUrl = url.replace('#', '%23');
+        window.location.href = 'happ://add/' + safeUrl;
       };
 
       renderAll();
